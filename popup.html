@@ -1,17 +1,84 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Misinformation Detector</title>
+  <title>Fake News Detector</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #d8b4fe; color: white; padding: 16px; }
-    button { padding: 8px 12px; border: none; background: #7c3aed; color: white; cursor: pointer; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f8f9fa;
+      color: #212529;
+      padding: 20px;
+      width: 400px;
+    }
+    .container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      font-size: 24px;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+    .description {
+      color: #6c757d;
+      font-size: 14px;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      background: #3498db;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    #result {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 5px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .loading {
+      display: none;
+      text-align: center;
+      margin: 10px 0;
+    }
+    .loading::after {
+      content: '';
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #3498db;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
-  <h1>Misinformation Detector</h1>
-  <p>Click the button to scan the page for misinformation.</p>
-  <button id="scan-button">Scan Page</button>
-  <p id="result">Result will appear here...</p>
+  <div class="container">
+    <h1>Fake News Detector</h1>
+    <p class="description">Highlight any text on the webpage and click the button to analyze it for potential misinformation.</p>
+    <button id="scan-button">Analyze Text</button>
+    <div class="loading" id="loading"></div>
+    <div id="result"></div>
+  </div>
+  <script src="popup.js"></script>
 </body>
-<script src="popup.js"></script>
 </html>
