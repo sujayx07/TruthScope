@@ -1,0 +1,222 @@
+"use client"
+
+import { useState, useEffect, useRef } from "react"
+import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Check, ChevronRight, X } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+export function PricingSection() {
+  const [isVisible, setIsVisible] = useState(false)
+  const [isYearly, setIsYearly] = useState(false)
+  const sectionRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true)
+        }
+      },
+      { threshold: 0.1 },
+    )
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current)
+    }
+
+    return () => {
+      if (sectionRef.current) {
+        observer.unobserve(sectionRef.current)
+      }
+    }
+  }, [])
+
+  const plans = [
+    {
+      name: "Free",
+      description: "Basic protection for casual browsing",
+      monthlyPrice: "$0",
+      yearlyPrice: "$0",
+      features: [
+        { name: "Basic fake news detection", included: true },
+        { name: "Limited daily scans (10/day)", included: true },
+        { name: "Source credibility scoring", included: true },
+        { name: "Browser extension", included: true },
+        { name: "AI-powered analysis", included: false },
+        { name: "Unlimited scans", included: false },
+        { name: "Detailed analysis reports", included: false },
+        { name: "Cross-device synchronization", included: false },
+      ],
+      cta: "Install Free",
+      popular: false,
+      color: "from-slate-500 to-slate-600",
+    },
+    {
+      name: "Premium",
+      description: "Advanced protection for daily users",
+      monthlyPrice: "$4.99",
+      yearlyPrice: "$49.99",
+      yearlyDiscount: "Save 17%",
+      features: [
+        { name: "Basic fake news detection", included: true },
+        { name: "Unlimited scans", included: true },
+        { name: "Source credibility scoring", included: true },
+        { name: "Browser extension", included: true },
+        { name: "AI-powered analysis", included: true },
+        { name: "Detailed analysis reports", included: true },
+        { name: "Cross-device synchronization", included: true },
+        { name: "Priority updates", included: true },
+      ],
+      cta: "Get Premium",
+      popular: true,
+      color: "from-primary to-purple-600",
+    },
+    {
+      name: "Enterprise",
+      description: "Complete solution for organizations",
+      monthlyPrice: "Custom",
+      yearlyPrice: "Custom",
+      features: [
+        { name: "All Premium features", included: true },
+        { name: "Team management dashboard", included: true },
+        { name: "API access", included: true },
+        { name: "Custom integration options", included: true },
+        { name: "Dedicated support", included: true },
+        { name: "Training sessions", included: true },
+        { name: "Custom reporting", included: true },
+        { name: "SLA guarantees", included: true },
+      ],
+      cta: "Contact Sales",
+      popular: false,
+      color: "from-indigo-500 to-indigo-600",
+    },
+  ]
+
+  return (
+    <section id="pricing" className="py-20 bg-muted/30" ref={sectionRef}>
+      <div
+        className={cn(
+          "container transition-all duration-1000 transform",
+          isVisible ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0",
+        )}
+      >
+        <div className="text-center mb-16">
+          <Badge className="mb-4 px-3 py-1 text-sm bg-gradient-to-r from-primary/20 to-purple-600/20 hover:from-primary/30 hover:to-purple-600/30 transition-colors">
+            Pricing
+          </Badge>
+          <h2 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl mb-4">
+            Choose Your{" "}
+            <span className="bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+              Protection
+            </span>{" "}
+            Level
+          </h2>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            Flexible plans designed to meet your needs. All plans include core TruthScope features.
+          </p>
+
+          <div className="flex items-center justify-center mt-8 mb-12">
+            <div className="bg-muted rounded-full p-1 flex items-center">
+              <button
+                className={cn(
+                  "px-4 py-2 rounded-full text-sm font-medium transition-all",
+                  !isYearly ? "bg-background shadow-sm" : "text-muted-foreground",
+                )}
+                onClick={() => setIsYearly(false)}
+              >
+                Monthly
+              </button>
+              <button
+                className={cn(
+                  "px-4 py-2 rounded-full text-sm font-medium transition-all",
+                  isYearly ? "bg-background shadow-sm" : "text-muted-foreground",
+                )}
+                onClick={() => setIsYearly(true)}
+              >
+                Yearly
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-8 md:grid-cols-3 max-w-6xl mx-auto">
+          {plans.map((plan, index) => (
+            <Card
+              key={index}
+              className={cn(
+                "relative overflow-hidden transition-all duration-300 hover:shadow-xl",
+                plan.popular
+                  ? "border-primary shadow-lg scale-105 md:scale-110 z-10"
+                  : "border-border shadow hover:scale-105",
+              )}
+            >
+              {plan.popular && (
+                <div className="absolute top-0 right-0">
+                  <div className="bg-gradient-to-r from-primary to-purple-600 text-primary-foreground text-xs font-medium px-3 py-1 rounded-bl-lg">
+                    Most Popular
+                  </div>
+                </div>
+              )}
+
+              <CardContent className="p-6 pt-8">
+                <div className="mb-4">
+                  <h3 className="text-2xl font-bold">{plan.name}</h3>
+                  <p className="text-muted-foreground">{plan.description}</p>
+                </div>
+                <div className="mb-6">
+                  <span className="text-4xl font-bold">{isYearly ? plan.yearlyPrice : plan.monthlyPrice}</span>
+                  {(isYearly ? plan.yearlyPrice : plan.monthlyPrice) !== "Custom" && (
+                    <span className="text-muted-foreground">{isYearly ? "/year" : "/month"}</span>
+                  )}
+                  {isYearly && plan.yearlyDiscount && (
+                    <div className="mt-1">
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        {plan.yearlyDiscount}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+                <ul className="space-y-3 mb-6">
+                  {plan.features.map((feature, i) => (
+                    <li key={i} className="flex items-start">
+                      {feature.included ? (
+                        <Check className="h-5 w-5 text-green-500 shrink-0 mr-2" />
+                      ) : (
+                        <X className="h-5 w-5 text-muted-foreground/50 shrink-0 mr-2" />
+                      )}
+                      <span className={feature.included ? "" : "text-muted-foreground/70"}>{feature.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+              <CardFooter className="p-6 pt-0">
+                <Button
+                  className={cn(
+                    "w-full",
+                    plan.popular
+                      ? `bg-gradient-to-r ${plan.color} hover:opacity-90 transition-opacity`
+                      : "bg-muted-foreground/80 hover:bg-muted-foreground",
+                  )}
+                  variant={plan.popular ? "default" : "secondary"}
+                >
+                  {plan.cta}
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+
+        <div className="mt-16 text-center">
+          <p className="text-muted-foreground mb-4">Need a custom solution for your organization?</p>
+          <Button variant="outline" size="lg" className="border-primary/20 hover:border-primary/40 transition-colors">
+            Contact Our Sales Team
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
