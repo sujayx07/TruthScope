@@ -7,7 +7,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for cross-origin requests
 
 # Configure Gemini model
-configure(api_key="Your API KEY")
+configure(api_key="AIzaSyCI-IRlZXpMoCJfBMTHKfHMRi2hrkTZrYI")
 model = GenerativeModel('gemini-1.5-flash')
 
 generation_config = GenerationConfig(

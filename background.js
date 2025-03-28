@@ -18,7 +18,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log("Backend analysis result:", result);
 
         if (result.isMisinformation) {
-          chrome.notifications.create({
+          chrome.notifications.create({ // Create a notification
             type: "basic",
             iconUrl: "icon16.png", // Replace with your icon file
             title: "⚠️ Misinformation Detected",
