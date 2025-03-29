@@ -93,49 +93,58 @@ export function TestimonialsSection() {
 
   const testimonials = [
     {
-      name: "Sarah Johnson",
-      role: "Journalist",
+      name: "Ananya Sharma",
+      role: "Digital Marketer",
       content:
-        "TruthScope has completely transformed how I verify news sources. It's an essential tool for any journalist in today's digital landscape.",
-      avatar: "/placeholder.svg?height=80&width=80",
+        "With so much fake news on social media, TruthScope helps me stay informed with accurate information.",
+      avatar: "./Journalist.jpg?height=80&width=80",
       rating: 5,
       publication: "The Daily Chronicle",
     },
     {
-      name: "Michael Chen",
+      name: "Dr. Ramesh Verma",
       role: "College Professor",
       content:
-        "I recommend TruthScope to all my students. It helps them develop critical thinking skills and identify misinformation effectively.",
-      avatar: "/placeholder.svg?height=80&width=80",
+        "As a retired professor, I’ve seen how misinformation can mislead people. TruthScope is an excellent tool for verifying facts before believing them",
+      avatar: "./Professor.jpeg?height=80&width=80",
       rating: 5,
-      publication: "State University",
+      publication: "Academy of Technology",
     },
     {
-      name: "Emily Rodriguez",
+      name: "Arjun Mehta",
       role: "Social Media Manager",
       content:
-        "This extension has saved me countless times from sharing unverified content. The real-time analysis is incredibly accurate and has become an essential part of my workflow.",
-      avatar: "/placeholder.svg?height=80&width=80",
+        "In the age of viral content, misinformation spreads fast. As a social media manager, TruthScope helps me verify news before sharing, ensuring credibility.",
+      avatar: "./office job.avif?height=80&width=80",
       rating: 5,
       publication: "TechConnect",
     },
     {
-      name: "David Wilson",
-      role: "High School Teacher",
+      name: "Aditya Kapoor",
+      role: "College Student",
       content:
-        "Teaching media literacy has never been easier. TruthScope gives my students practical experience in evaluating online information critically.",
-      avatar: "/placeholder.svg?height=80&width=80",
+        "As a student, I come across a lot of fake news online. TruthScope makes it easy to fact-check information and avoid spreading false content.",
+      avatar: "./a normal boy.webp?height=80&width=80",
       rating: 4,
-      publication: "Central High School",
+      publication: "Future Institute of Engineering",
     },
     {
-      name: "Priya Patel",
-      role: "Digital Marketing Specialist",
+      name: "Dr. Kavita Rao",
+      role: "Biologist",
       content:
-        "The bias detection feature is a game-changer. It helps me understand different perspectives and create more balanced content for our audience.",
-      avatar: "/placeholder.svg?height=80&width=80",
+        "As a biologist, I often see misinformation about health and science spreading online. TruthScope is a great tool to fact-check claims and ensure people get accurate information",
+      avatar: "./biologist.jpg?height=80&width=80",
       rating: 5,
-      publication: "Global Marketing Solutions",
+      publication: "Biocon",
+    },
+    {
+      name: "Mrs. Meenal Joshi",
+      role: "High School Teacher",
+      content:
+        "As a teacher, I recommend TruthScope to my students to develop critical thinking and media literacy.",
+      avatar: "./Teacher.jpeg?height=80&width=80",
+      rating: 5,
+      publication: "Julien Day High School",
     },
   ]
 
@@ -218,7 +227,7 @@ export function TestimonialsSection() {
                               alt={testimonial.name}
                               width={80}
                               height={80}
-                              className="object-cover"
+                              className="object-cover justify-center"
                             />
                           </div>
                           <div className="absolute -bottom-2 -right-2 bg-background rounded-full p-1 shadow-md">
