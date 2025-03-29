@@ -227,7 +227,7 @@ export function TestimonialsSection() {
                               alt={testimonial.name}
                               width={80}
                               height={80}
-                              className="object-cover justify-center"
+                              className="object-cover"
                             />
                           </div>
                           <div className="absolute -bottom-2 -right-2 bg-background rounded-full p-1 shadow-md">

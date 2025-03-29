@@ -50,6 +50,7 @@ export function HeroSection() {
     return () => clearInterval(typingInterval)
   }, [isVisible])
 
+
   return (
     <section id="hero" ref={sectionRef} className="relative overflow-hidden min-h-[calc(100vh-4rem)] flex items-center">
       <div
@@ -68,7 +69,7 @@ export function HeroSection() {
                 TruthScope
               </span>
             </h1>
-            <p className="text-xl text-foreground/80 h-6">
+            <p className="text-xl text-foreground/80 h-6 pb-4">
               {typedText}
               <span className="animate-pulse">|</span>
             </p>
@@ -77,6 +78,7 @@ export function HeroSection() {
               identify misinformation with confidence.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
+            <a href="https://github.com/sujayx07/TruthScope" target="_blank">
               <Button
                 size="lg"
                 className="group relative overflow-hidden rounded-lg bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 transition-all duration-300 shadow-lg hover:shadow-primary/20"
@@ -86,6 +88,7 @@ export function HeroSection() {
                   <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
                 </span>
               </Button>
+              </a>
               <Button
                 size="lg"
                 variant="outline"
@@ -102,12 +105,12 @@ export function HeroSection() {
                     key={i}
                     className="h-8 w-8 rounded-full border-2 border-background bg-muted overflow-hidden transition-transform hover:scale-110 hover:z-10"
                   >
-                    <Image src={`/placeholder.svg?height=32&width=32&text=${i}`} alt="User" width={32} height={32} />
+                    <Image src={`./user.png?height=32&width=32&text=${i}`} alt="User" width={32} height={32} />
                   </div>
                 ))}
               </div>
               <div>
-                <span className="font-medium">10,000+</span> users trust TruthScope
+                <span className="font-medium">10+</span> users trust TruthScope
               </div>
             </div>
           </div>
@@ -130,10 +133,10 @@ export function HeroSection() {
               </div>
               <div className="relative">
                 <Image
-                  src="/placeholder.svg?height=600&width=800&text=TruthScope+Extension+Demo"
+                  src="/placeholder.svg?height=300&width=400&text=TruthScope+Extension+Demo"
                   alt="TruthScope Extension"
-                  width={800}
-                  height={600}
+                  width={400}
+                  height={300}
                   className="w-full h-auto"
                 />
                 <div className="absolute top-4 right-4 bg-background/90 backdrop-blur-sm border border-muted shadow-lg rounded-lg p-4 max-w-[200px] animate-float">

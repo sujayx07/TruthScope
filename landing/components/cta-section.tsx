@@ -64,6 +64,7 @@ export function CtaSection() {
               Join thousands of users who trust TruthScope to help them navigate the complex information landscape.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <a href="https://github.com/sujayx07/TruthScope" target="_blank">
               <Button
                 size="lg"
                 variant="secondary"
@@ -72,6 +73,7 @@ export function CtaSection() {
                 Add to Chrome
                 <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Button>
+              </a>
               <Button
                 size="lg"
                 variant="outline"

@@ -8,7 +8,7 @@ export function Footer() {
         <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <Shield className="h-6 w-6 text-primary" />
+            <img src="./TruthScope_Logo.png" alt="" width={35} height={35} />
               <span className="text-lg font-bold bg-gradient-to-r from-primary p-0.5 to-purple-600 bg-clip-text text-transparent">
                 TruthScope
               </span>
