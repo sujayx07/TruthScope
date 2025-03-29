@@ -40,6 +40,8 @@ export function TestimonialsSection() {
   }, [])
 
   useEffect(() => {
+    if (!isVisible) return
+
     const interval = setInterval(() => {
       if (!isDragging) {
         setActiveTestimonial((prev) => (prev + 1) % testimonials.length)
@@ -47,7 +49,7 @@ export function TestimonialsSection() {
     }, 5000)
 
     return () => clearInterval(interval)
-  }, [isDragging])
+  }, [isVisible, isDragging])
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true)
@@ -138,7 +140,7 @@ export function TestimonialsSection() {
   ]
 
   return (
-    <section id="testimonials" className="py-20" ref={sectionRef}>
+    <section id="testimonials" className="py-20 min-h-screen flex items-center" ref={sectionRef}>
       <div
         className={cn(
           "container transition-all duration-1000 transform",
@@ -151,11 +153,11 @@ export function TestimonialsSection() {
           </Badge>
           <h2 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl mb-4">
             What Our Users Say About{" "}
-            <span className="bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+            <span className="p-0.5 bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent animate-gradient">
               TruthScope
             </span>
           </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
             Hear from our users who rely on TruthScope to navigate the complex information landscape.
           </p>
         </div>
@@ -163,7 +165,7 @@ export function TestimonialsSection() {
         <div className="relative max-w-5xl mx-auto">
           <div className="absolute top-1/2 left-4 -translate-y-1/2 z-30 md:flex hidden" onClick={handlePrev}>
             <button
-              className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shadow-lg"
+              className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border flex items-center justify-center text-foreground/60 hover:text-foreground transition-colors shadow-lg hover:shadow-xl transform hover:scale-110 transition-transform"
               aria-label="Previous testimonial"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -172,7 +174,7 @@ export function TestimonialsSection() {
 
           <div className="absolute top-1/2 right-4 -translate-y-1/2 z-30 md:flex hidden" onClick={handleNext}>
             <button
-              className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shadow-lg"
+              className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border flex items-center justify-center text-foreground/60 hover:text-foreground transition-colors shadow-lg hover:shadow-xl transform hover:scale-110 transition-transform"
               aria-label="Next testimonial"
             >
               <ChevronRight className="h-5 w-5" />
@@ -188,17 +190,29 @@ export function TestimonialsSection() {
             onMouseLeave={handleMouseUp}
           >
             <div
-              className="flex transition-transform duration-500 ease-out"
+              className="flex transition-transform duration-700 ease-out"
               style={{ transform: `translateX(-${activeTestimonial * 100}%)` }}
             >
               {testimonials.map((testimonial, index) => (
                 <div key={index} className="min-w-full px-4">
-                  <Card className="border-none shadow-lg bg-muted/30 overflow-hidden">
+                  <Card
+                    className={cn(
+                      "border-none shadow-lg overflow-hidden transition-all duration-500",
+                      activeTestimonial === index
+                        ? "bg-gradient-to-br from-background to-muted/30 scale-100"
+                        : "bg-background/80 scale-95 opacity-80",
+                    )}
+                  >
                     <CardContent className="p-8 relative">
-                      <Quote className="absolute top-4 right-4 h-12 w-12 text-muted/10" />
+                      <Quote className="absolute top-4 right-4 h-12 w-12 text-primary/10" />
                       <div className="flex flex-col md:flex-row gap-6 items-center md:items-start text-center md:text-left">
                         <div className="relative">
-                          <div className="h-20 w-20 rounded-full overflow-hidden border-4 border-background shadow-xl">
+                          <div
+                            className={cn(
+                              "h-20 w-20 rounded-full overflow-hidden border-4 shadow-xl transition-all duration-500",
+                              activeTestimonial === index ? "border-primary/20" : "border-background",
+                            )}
+                          >
                             <Image
                               src={testimonial.avatar || "/placeholder.svg"}
                               alt={testimonial.name}
@@ -219,16 +233,32 @@ export function TestimonialsSection() {
                               <Star
                                 key={i}
                                 className={cn(
-                                  "inline-block h-5 w-5 mr-1",
+                                  "inline-block h-5 w-5 mr-1 transition-all duration-300",
                                   i < testimonial.rating ? "text-amber-400 fill-amber-400" : "text-muted fill-muted",
                                 )}
                               />
                             ))}
                           </div>
-                          <p className="text-xl mb-4 italic">"{testimonial.content}"</p>
+                          <p
+                            className={cn(
+                              "text-xl mb-4 italic transition-all duration-500",
+                              activeTestimonial === index ? "text-foreground" : "text-foreground/70",
+                            )}
+                          >
+                            "{testimonial.content}"
+                          </p>
                           <div>
-                            <div className="font-bold text-lg">{testimonial.name}</div>
-                            <div className="text-sm text-muted-foreground">
+                            <div
+                              className={cn(
+                                "font-bold text-lg transition-all duration-500",
+                                activeTestimonial === index
+                                  ? "bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent"
+                                  : "text-foreground",
+                              )}
+                            >
+                              {testimonial.name}
+                            </div>
+                            <div className="text-sm text-foreground/60">
                               {testimonial.role}, {testimonial.publication}
                             </div>
                           </div>

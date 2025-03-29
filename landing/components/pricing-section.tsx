@@ -95,7 +95,7 @@ export function PricingSection() {
   ]
 
   return (
-    <section id="pricing" className="py-20 bg-muted/30" ref={sectionRef}>
+    <section id="pricing" className="py-20 min-h-screen flex items-center" ref={sectionRef}>
       <div
         className={cn(
           "container transition-all duration-1000 transform",
@@ -108,12 +108,12 @@ export function PricingSection() {
           </Badge>
           <h2 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl mb-4">
             Choose Your{" "}
-            <span className="bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent animate-gradient">
               Protection
             </span>{" "}
             Level
           </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
             Flexible plans designed to meet your needs. All plans include core TruthScope features.
           </p>
 
@@ -121,8 +121,8 @@ export function PricingSection() {
             <div className="bg-muted rounded-full p-1 flex items-center">
               <button
                 className={cn(
-                  "px-4 py-2 rounded-full text-sm font-medium transition-all",
-                  !isYearly ? "bg-background shadow-sm" : "text-muted-foreground",
+                  "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300",
+                  !isYearly ? "bg-background shadow-md text-primary" : "text-foreground/60 hover:text-foreground",
                 )}
                 onClick={() => setIsYearly(false)}
               >
@@ -130,8 +130,8 @@ export function PricingSection() {
               </button>
               <button
                 className={cn(
-                  "px-4 py-2 rounded-full text-sm font-medium transition-all",
-                  isYearly ? "bg-background shadow-sm" : "text-muted-foreground",
+                  "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300",
+                  isYearly ? "bg-background shadow-md text-primary" : "text-foreground/60 hover:text-foreground",
                 )}
                 onClick={() => setIsYearly(true)}
               >
@@ -141,77 +141,96 @@ export function PricingSection() {
           </div>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-3 max-w-6xl mx-auto">
+        <div className="grid gap-8 md:grid-cols-3 max-w-6xl mx-auto perspective">
           {plans.map((plan, index) => (
-            <Card
+            <div
               key={index}
-              className={cn(
-                "relative overflow-hidden transition-all duration-300 hover:shadow-xl",
-                plan.popular
-                  ? "border-primary shadow-lg scale-105 md:scale-110 z-10"
-                  : "border-border shadow hover:scale-105",
-              )}
+              className="perspective"
+              style={{
+                perspective: "1000px",
+                transformStyle: "preserve-3d",
+              }}
             >
-              {plan.popular && (
-                <div className="absolute top-0 right-0">
-                  <div className="bg-gradient-to-r from-primary to-purple-600 text-primary-foreground text-xs font-medium px-3 py-1 rounded-bl-lg">
-                    Most Popular
-                  </div>
-                </div>
-              )}
-
-              <CardContent className="p-6 pt-8">
-                <div className="mb-4">
-                  <h3 className="text-2xl font-bold">{plan.name}</h3>
-                  <p className="text-muted-foreground">{plan.description}</p>
-                </div>
-                <div className="mb-6">
-                  <span className="text-4xl font-bold">{isYearly ? plan.yearlyPrice : plan.monthlyPrice}</span>
-                  {(isYearly ? plan.yearlyPrice : plan.monthlyPrice) !== "Custom" && (
-                    <span className="text-muted-foreground">{isYearly ? "/year" : "/month"}</span>
-                  )}
-                  {isYearly && plan.yearlyDiscount && (
-                    <div className="mt-1">
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                        {plan.yearlyDiscount}
-                      </Badge>
+              <Card
+                className={cn(
+                  "relative overflow-hidden transition-all duration-500 hover:shadow-xl",
+                  plan.popular
+                    ? "border-primary shadow-lg scale-105 md:scale-110 z-10"
+                    : "border-border shadow hover:scale-105",
+                )}
+                style={{
+                  transform: isVisible ? "rotateY(0) translateZ(0)" : "rotateY(-15deg) translateZ(-50px)",
+                  transition: "transform 0.8s ease-out, box-shadow 0.3s ease-out, scale 0.3s ease-out",
+                  transitionDelay: `${index * 100}ms`,
+                }}
+              >
+                {plan.popular && (
+                  <div className="absolute top-0 right-0">
+                    <div className="bg-gradient-to-r from-primary to-purple-600 text-primary-foreground text-xs font-medium px-3 py-1 rounded-bl-lg">
+                      Most Popular
                     </div>
-                  )}
-                </div>
-                <ul className="space-y-3 mb-6">
-                  {plan.features.map((feature, i) => (
-                    <li key={i} className="flex items-start">
-                      {feature.included ? (
-                        <Check className="h-5 w-5 text-green-500 shrink-0 mr-2" />
-                      ) : (
-                        <X className="h-5 w-5 text-muted-foreground/50 shrink-0 mr-2" />
-                      )}
-                      <span className={feature.included ? "" : "text-muted-foreground/70"}>{feature.name}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-              <CardFooter className="p-6 pt-0">
-                <Button
-                  className={cn(
-                    "w-full",
-                    plan.popular
-                      ? `bg-gradient-to-r ${plan.color} hover:opacity-90 transition-opacity`
-                      : "bg-muted-foreground/80 hover:bg-muted-foreground",
-                  )}
-                  variant={plan.popular ? "default" : "secondary"}
-                >
-                  {plan.cta}
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </CardFooter>
-            </Card>
+                  </div>
+                )}
+
+                <CardContent className="p-6 pt-8">
+                  <div className="mb-4">
+                    <h3 className="text-2xl font-bold">{plan.name}</h3>
+                    <p className="text-foreground/70">{plan.description}</p>
+                  </div>
+                  <div className="mb-6">
+                    <span className="text-4xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                      {isYearly ? plan.yearlyPrice : plan.monthlyPrice}
+                    </span>
+                    {(isYearly ? plan.yearlyPrice : plan.monthlyPrice) !== "Custom" && (
+                      <span className="text-foreground/70">{isYearly ? "/year" : "/month"}</span>
+                    )}
+                    {isYearly && plan.yearlyDiscount && (
+                      <div className="mt-1">
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                          {plan.yearlyDiscount}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                  <ul className="space-y-3 mb-6">
+                    {plan.features.map((feature, i) => (
+                      <li key={i} className="flex items-start">
+                        {feature.included ? (
+                          <Check className="h-5 w-5 text-green-500 shrink-0 mr-2" />
+                        ) : (
+                          <X className="h-5 w-5 text-foreground/30 shrink-0 mr-2" />
+                        )}
+                        <span className={feature.included ? "" : "text-foreground/50"}>{feature.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+                <CardFooter className="p-6 pt-0">
+                  <Button
+                    className={cn(
+                      "w-full group",
+                      plan.popular
+                        ? `bg-gradient-to-r ${plan.color} hover:opacity-90 transition-opacity shadow-lg hover:shadow-primary/20`
+                        : "bg-muted-foreground/80 hover:bg-muted-foreground shadow-md hover:shadow-lg",
+                    )}
+                    variant={plan.popular ? "default" : "secondary"}
+                  >
+                    {plan.cta}
+                    <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </Button>
+                </CardFooter>
+              </Card>
+            </div>
           ))}
         </div>
 
         <div className="mt-16 text-center">
-          <p className="text-muted-foreground mb-4">Need a custom solution for your organization?</p>
-          <Button variant="outline" size="lg" className="border-primary/20 hover:border-primary/40 transition-colors">
+          <p className="text-foreground/70 mb-4">Need a custom solution for your organization?</p>
+          <Button
+            variant="outline"
+            size="lg"
+            className="border-primary/20 hover:border-primary/40 transition-colors shadow-sm hover:shadow-md"
+          >
             Contact Our Sales Team
           </Button>
         </div>
