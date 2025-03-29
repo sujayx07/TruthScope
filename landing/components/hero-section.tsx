@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 export function HeroSection() {
   const [isVisible, setIsVisible] = useState(false)
   const [typedText, setTypedText] = useState("")
-  const fullText = "Clarity in a world of misinformation"
+  const fullText = "Illuminating truth in a world of misinformation..."
   const sectionRef = useRef<HTMLElement>(null)
 
   useEffect(() => {

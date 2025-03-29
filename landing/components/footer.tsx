@@ -14,7 +14,7 @@ export function Footer() {
               </span>
             </div>
             <p className="text-foreground/70 mb-4">
-              Clarity in a world of misinformation. Our AI-powered browser extension helps you identify fake news and
+            Illuminating truth in a world of misinformation. Our AI-powered browser extension helps you identify fake news and
               make informed decisions.
             </p>
             <div className="flex gap-4">
