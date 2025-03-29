@@ -115,7 +115,7 @@ export function TestimonialsSection() {
       role: "Social Media Manager",
       content:
         "In the age of viral content, misinformation spreads fast. As a social media manager, TruthScope helps me verify news before sharing, ensuring credibility.",
-      avatar: "./office job.avif?height=80&width=80",
+      avatar: "./office job.jpg?height=80&width=80",
       rating: 5,
       publication: "TechConnect",
     },
@@ -124,7 +124,7 @@ export function TestimonialsSection() {
       role: "College Student",
       content:
         "As a student, I come across a lot of fake news online. TruthScope makes it easy to fact-check information and avoid spreading false content.",
-      avatar: "./a normal boy.webp?height=80&width=80",
+      avatar: "./a normal boy.jpg?height=80&width=80",
       rating: 4,
       publication: "Future Institute of Engineering",
     },
