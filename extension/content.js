@@ -12,32 +12,45 @@ async function ensureBackgroundScriptReady() {
   });
 }
 
-// Listen for text selection events
-document.addEventListener('mouseup', async function() {
-  const selectedText = window.getSelection().toString().trim();
+// Keep track of last selection to avoid duplicate analysis
+let lastSelection = '';
+const DEBOUNCE_DELAY = 300;
+
+// Function to handle text selection
+function handleSelection() {
+  const selection = window.getSelection().toString().trim();
   
-  if (selectedText) {
-    try {
-      // Ensure background script is ready
-      await ensureBackgroundScriptReady();
-      
-      // Log the extracted selected text
-      console.log("Text selected:", selectedText);
-      
-      // Send selected text to the background script
-      chrome.runtime.sendMessage({
-        action: "textSelected",
-        data: selectedText
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error("Error sending message:", chrome.runtime.lastError);
-        }
-      });
-    } catch (error) {
-      console.error("Error in content script:", error);
-    }
+  if (selection && selection !== lastSelection && selection.split(/\s+/).length > 3) {
+    console.log("📝 New text selection detected:", selection);
+    lastSelection = selection;
+    
+    // Send selected text for analysis
+    chrome.runtime.sendMessage({ 
+      action: "analyzeText",
+      data: selection
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('Extension context invalidated:', chrome.runtime.lastError);
+      } else if (response && response.error) {
+        console.error('Analysis error:', response.error);
+      }
+    });
   }
+}
+
+// Debounced selection handler
+document.addEventListener('mouseup', () => {
+  setTimeout(handleSelection, DEBOUNCE_DELAY);
 });
+
+// Keep-alive for background script
+setInterval(() => {
+  chrome.runtime.sendMessage({ action: "ping" }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.warn('Keep-alive failed:', chrome.runtime.lastError);
+    }
+  });
+}, 10000);
 
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
