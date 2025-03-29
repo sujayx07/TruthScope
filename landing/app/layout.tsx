@@ -2,9 +2,9 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: 'TruthScope',
+  description: 'AI-powered browser extension analyzes news articles and social media posts in real-time',
+  generator: 'TruthScope',
 }
 
 export default function RootLayout({
