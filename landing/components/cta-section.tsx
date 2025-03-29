@@ -39,7 +39,7 @@ export function CtaSection() {
         )}
       >
         <div className="relative overflow-hidden rounded-2xl">
-          <div className="absolute inset-0 bg-gradient-to-r from-primary to-purple-600 opacity-90" />
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-950 to-purple-600 opacity-100" />
           <div className="absolute inset-0 bg-grid-pattern opacity-10" />
 
           <div
@@ -75,7 +75,7 @@ export function CtaSection() {
               <Button
                 size="lg"
                 variant="outline"
-                className="border-white/30 text-white hover:bg-white/10 shadow-lg hover:shadow-xl transition-all duration-300"
+                className="bg-white text-primary hover:bg-white/90 group shadow-lg hover:shadow-xl transition-all duration-300"
               >
                 Learn More
               </Button>
@@ -91,7 +91,7 @@ export function CtaSection() {
                   transitionDelay: "0.1s",
                 }}
               >
-                <div className="text-3xl font-bold text-white mb-1">10,000+</div>
+                <div className="text-3xl font-bold text-white mb-1">10+</div>
                 <div className="text-white/70">Active Users</div>
               </div>
               <div
@@ -103,7 +103,7 @@ export function CtaSection() {
                   transitionDelay: "0.2s",
                 }}
               >
-                <div className="text-3xl font-bold text-white mb-1">500+</div>
+                <div className="text-3xl font-bold text-white mb-1">5+</div>
                 <div className="text-white/70">5-Star Reviews</div>
               </div>
               <div
@@ -127,7 +127,7 @@ export function CtaSection() {
                   transitionDelay: "0.4s",
                 }}
               >
-                <div className="text-3xl font-bold text-white mb-1">99.8%</div>
+                <div className="text-3xl font-bold text-white mb-1">97.6%</div>
                 <div className="text-white/70">Accuracy Rate</div>
               </div>
             </div>
