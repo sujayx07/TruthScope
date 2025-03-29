@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Shield, Menu, X, ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SignInButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -37,7 +38,7 @@ export function Navbar() {
     const section = document.getElementById(sectionId)
     if (section) {
       window.scrollTo({
-        top: section.offsetTop - 50, // Adjust offset for navbar height
+        top: section.offsetTop - 50,
         behavior: "smooth",
       })
     }
@@ -92,9 +93,16 @@ export function Navbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-4">
-          <Link href="#" className="text-sm font-medium transition-colors hover:text-primary">
-            Log in
-          </Link>
+          {/* Clerk Authentication Logic */}
+          <SignedOut>
+            <SignInButton mode="modal">
+              <Button variant="outline">Log in</Button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <UserButton afterSignOutUrl="/" />
+          </SignedIn>
+
           <Button className="relative overflow-hidden group bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 transition-all duration-300">
             <span className="relative z-10 flex items-center">
               Add to Chrome
@@ -135,13 +143,17 @@ export function Navbar() {
                 {label}
               </a>
             ))}
-            <Link
-              href="#"
-              className="text-sm font-medium transition-colors hover:text-primary px-2 py-1.5 rounded-md hover:bg-muted"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Log in
-            </Link>
+
+            {/* Clerk Login Button */}
+            <SignedOut>
+              <SignInButton mode="modal">
+                <Button className="w-full justify-center mt-2">Log in</Button>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+
             <Button className="w-full justify-center mt-2 bg-gradient-to-r from-primary to-purple-600">
               Add to Chrome
               <ArrowRight className="ml-2 h-4 w-4" />
