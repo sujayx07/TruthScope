@@ -3,10 +3,10 @@ async function ensureBackgroundScriptReady() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ action: "ping" }, (response) => {
       if (chrome.runtime.lastError) {
-        console.log("⏳ Background script not ready, retrying...");
+        console.log(" Background script not ready, retrying...");
         setTimeout(() => ensureBackgroundScriptReady().then(resolve), 100);
       } else {
-        console.log("✅ Background script ready");
+        console.log(" Background script ready");
         resolve();
       }
     });
@@ -22,7 +22,7 @@ async function sendMessageWithRetry(message, maxRetries = 3) {
       attempts++;
       chrome.runtime.sendMessage(message, (response) => {
         if (chrome.runtime.lastError) {
-          console.log(`⚠️ Attempt ${attempts} failed:`, chrome.runtime.lastError);
+          console.log(` Attempt ${attempts} failed:`, chrome.runtime.lastError);
           if (attempts < maxRetries) {
             setTimeout(trySend, 1000); // Wait 1 second before retry
           } else {
@@ -49,7 +49,7 @@ function showError(element, message) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  console.log("🚀 Popup initialized");
+  console.log(" Popup initialized");
   
   const analyzeBtn = document.getElementById('analyzeBtn');
   const selectedTextDiv = document.getElementById('selectedText');
@@ -59,25 +59,25 @@ document.addEventListener('DOMContentLoaded', function() {
   // Get the active tab
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     if (chrome.runtime.lastError) {
-      console.error("❌ Error getting active tab:", chrome.runtime.lastError);
+      console.error(" Error getting active tab:", chrome.runtime.lastError);
       selectedTextDiv.textContent = "Error: Please refresh the page and try again.";
       return;
     }
 
-    console.log("📑 Getting selected text from active tab");
+    console.log(" Getting selected text from active tab");
     // Send message to content script to get selected text
     chrome.tabs.sendMessage(tabs[0].id, {action: "getSelectedText"}, function(response) {
       if (chrome.runtime.lastError) {
-        console.error("❌ Error getting selected text:", chrome.runtime.lastError);
+        console.error(" Error getting selected text:", chrome.runtime.lastError);
         selectedTextDiv.textContent = "Error getting selected text. Please refresh the page and try again.";
         return;
       }
       
       if (response && response.text) {
-        console.log("📝 Selected text:", response.text);
+        console.log(" Selected text:", response.text);
         selectedTextDiv.textContent = response.text;
       } else {
-        console.log("⚠️ No text selected");
+        console.log(" No text selected");
         selectedTextDiv.textContent = "No text selected. Please select some text on the page.";
         analyzeBtn.disabled = true;
       }
@@ -87,17 +87,17 @@ document.addEventListener('DOMContentLoaded', function() {
   // Listen for analysis results from content script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "analysisResult") {
-      console.log("📊 Received analysis result from content script:", message.result);
+      console.log(" Received analysis result from content script:", message.result);
       displayAnalysisResult(message.result);
     }
   });
 
   analyzeBtn.addEventListener('click', async function() {
-    console.log("🔍 Analysis button clicked");
+    console.log(" Analysis button clicked");
     const selectedText = selectedTextDiv.textContent;
     
     if (selectedText === "No text selected. Please select some text on the page.") {
-      console.log("⚠️ No text selected for analysis");
+      console.log(" No text selected for analysis");
       showError(analysisResultDiv, "Please select some text to analyze.");
       return;
     }
@@ -117,10 +117,10 @@ document.addEventListener('DOMContentLoaded', function() {
         data: selectedText
       });
       
-      console.log("📊 Received analysis response:", analysisResponse);
+      console.log(" Received analysis response:", analysisResponse);
       
       if (analysisResponse.error) {
-        console.error("❌ Analysis error:", analysisResponse.error);
+        console.error(" Analysis error:", analysisResponse.error);
         showError(analysisResultDiv, `Error: ${analysisResponse.error}`);
         return;
       }
@@ -129,22 +129,22 @@ document.addEventListener('DOMContentLoaded', function() {
       displayAnalysisResult(analysisResponse);
 
       // Fetch related news with retry
-      console.log("📰 Fetching related news for:", selectedText);
+      console.log(" Fetching related news for:", selectedText);
       const newsResponse = await sendMessageWithRetry({
         action: "getNews",
         data: selectedText
       });
       
-      console.log("📋 Received news response:", newsResponse);
+      console.log(" Received news response:", newsResponse);
       
       if (newsResponse.error) {
-        console.error("❌ News API error:", newsResponse.error);
+        console.error(" News API error:", newsResponse.error);
         showError(newsResultsDiv, `Error fetching news: ${newsResponse.error}`);
         return;
       }
 
       if (!newsResponse.news || newsResponse.news.length === 0) {
-        console.log("⚠️ No news articles found");
+        console.log(" No news articles found");
         newsResultsDiv.innerHTML = "No related news articles found.";
         return;
       }
@@ -152,7 +152,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Display news results
       displayNewsResults(newsResponse.news);
     } catch (error) {
-      console.error("❌ Error in analysis process:", error);
+      console.error(" Error in analysis process:", error);
       showError(analysisResultDiv, `Error: ${error.message}`);
     } finally {
       analyzeBtn.disabled = false;
@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     let analysisHTML = `
       <div class="status-badge ${isFakeNews ? 'fake' : 'real'}">
-        ${isFakeNews ? '⚠️ Potential Fake News' : '✅ Credible Content'}
+        ${isFakeNews ? ' Potential Fake News' : ' Credible Content'}
       </div>
       <div class="confidence">Confidence: ${confidence}%</div>
     `;

@@ -45,7 +45,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       body: JSON.stringify({ text })
     })
       .then(async response => {
-        console.log("🔍 Analysis API Response Status:", response.status);
+        console.log(" Analysis API Response Status:", response.status);
         if (!response.ok) {
           const error = await response.text();
           throw new Error(`HTTP ${response.status}: ${error}`);
@@ -53,7 +53,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return response.json();
       })
       .then(result => {
-        console.log("✅ Backend analysis result:", result);
+        console.log(" Backend analysis result:", result);
 
         // Send response back to popup
         sendResponse(result);
