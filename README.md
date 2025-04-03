@@ -1,4 +1,4 @@
-# Fake News Detection Chrome Extension
+# TruthScope - Fake News Detection Chrome Extension
 
 A Chrome extension that helps users identify potential fake news and misinformation by analyzing text content using machine learning and fact-checking APIs.
 
