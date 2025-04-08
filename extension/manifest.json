@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Misinformation Detector",
+  "name": "TruthScope",
   "version": "1.0",
   "description": "Detect and flag misinformation on web pages.",
-  "permissions": ["scripting", "activeTab", "storage", "notifications"],
+  "permissions": ["scripting", "activeTab", "storage", "notifications", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html",
+    "default_title": "TruthScope Analysis"
   },
   "action": {
     "default_popup": "popup.html",

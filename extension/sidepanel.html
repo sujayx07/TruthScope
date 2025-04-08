@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>TruthScope - Detailed Analysis</title>
+  <link href="https://unpkg.com/tailwindcss@^1.0/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      border-radius: 1rem;
+      font-weight: 500;
+    }
+    .status-badge.fake {
+      background-color: #fce8e6;
+      color: #d93025;
+    }
+    .status-badge.real {
+      background-color: #e6f4ea;
+      color: #188038;
+    }
+    .loading::after {
+      content: '';
+      width: 1.25rem;
+      height: 1.25rem;
+      border: 3px solid #8E24AA;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-6">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-center mb-8">
+      <h1 class="text-3xl font-bold text-purple-800">TruthScope Analysis</h1>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Analysis Result</h2>
+      <div id="statusBadge" class="status-badge mb-4">Loading...</div>
+      <div id="confidence" class="text-gray-600"></div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Fact-Check Sources</h2>
+      <div id="factCheckResults" class="space-y-4">
+        <div class="loading">Loading fact-check sources...</div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Related News</h2>
+      <div id="newsResults" class="space-y-4">
+        <div class="loading">Loading related news...</div>
+      </div>
+    </div>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html> 
