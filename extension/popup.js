@@ -1,224 +1,231 @@
-// Function to check if background script is ready
-async function ensureBackgroundScriptReady() {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ action: "ping" }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.log(" Background script not ready, retrying...");
-        setTimeout(() => ensureBackgroundScriptReady().then(resolve), 100);
-      } else {
-        console.log(" Background script ready");
-        resolve();
-      }
-    });
-  });
-}
-
-// Function to safely send message with retry
-async function sendMessageWithRetry(message, maxRetries = 3) {
-  return new Promise((resolve, reject) => {
-    let attempts = 0;
-    
-    function trySend() {
-      attempts++;
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          console.log(` Attempt ${attempts} failed:`, chrome.runtime.lastError);
-          if (attempts < maxRetries) {
-            setTimeout(trySend, 1000); // Wait 1 second before retry
-          } else {
-            reject(new Error(`Failed after ${maxRetries} attempts: ${chrome.runtime.lastError.message}`));
-          }
-        } else {
-          resolve(response);
-        }
-      });
-    }
-    
-    trySend();
-  });
-}
-
-// Function to show loading state
-function showLoading(element) {
-  element.innerHTML = '<div class="loading">Processing...</div>';
-}
-
-// Function to show error
-function showError(element, message) {
-  element.innerHTML = `<div class="error">${message}</div>`;
-}
-
 document.addEventListener('DOMContentLoaded', function() {
-  console.log(" Popup initialized");
-  
-  const analyzeBtn = document.getElementById('analyzeBtn');
-  const selectedTextDiv = document.getElementById('selectedText');
-  const analysisResultDiv = document.getElementById('analysisResult');
-  const newsResultsDiv = document.getElementById('newsResults');
+    const analyzeButton = document.getElementById('analyzeButton');
+    const resultDiv = document.getElementById('result');
+    const statusDiv = document.getElementById('statusMessage');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const actionButton = document.getElementById('actionButton');
+    const themeToggleButton = document.getElementById('themeToggleButton'); // Add reference to theme toggle button
 
-  // Get the active tab
-  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-    if (chrome.runtime.lastError) {
-      console.error(" Error getting active tab:", chrome.runtime.lastError);
-      selectedTextDiv.textContent = "Error: Please refresh the page and try again.";
-      return;
+    // --- Theme Handling Code ---
+    const THEMES = ['light', 'dark', 'system'];
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+    /**
+     * Gets the stored theme preference from chrome.storage.local.
+     * @returns {Promise<string>} The stored theme ('light', 'dark', or 'system').
+     */
+    async function getStoredTheme() {
+        try {
+            const result = await chrome.storage.local.get(['theme']);
+            return THEMES.includes(result.theme) ? result.theme : 'system';
+        } catch (error) {
+            console.error("Error getting theme preference:", error);
+            return 'system'; // Default to system on error
+        }
     }
 
-    console.log(" Getting selected text from active tab");
-    // Send message to content script to get selected text
-    chrome.tabs.sendMessage(tabs[0].id, {action: "getSelectedText"}, function(response) {
-      if (chrome.runtime.lastError) {
-        console.error(" Error getting selected text:", chrome.runtime.lastError);
-        selectedTextDiv.textContent = "Error getting selected text. Please refresh the page and try again.";
-        return;
-      }
-      
-      if (response && response.text) {
-        console.log(" Selected text:", response.text);
-        selectedTextDiv.textContent = response.text;
-      } else {
-        console.log(" No text selected");
-        selectedTextDiv.textContent = "No text selected. Please select some text on the page.";
-        analyzeBtn.disabled = true;
-      }
-    });
-  });
+    /**
+     * Applies the theme to the UI based on the stored preference and system settings.
+     * @param {string} storedPreference - The user's selected preference ('light', 'dark', or 'system').
+     */
+    function applyThemeUI(storedPreference) {
+        const htmlElement = document.documentElement;
+        htmlElement.classList.remove('light', 'dark', 'theme-preference-system'); // Remove all theme-related classes
 
-  // Listen for analysis results from content script
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === "analysisResult") {
-      console.log(" Received analysis result from content script:", message.result);
-      displayAnalysisResult(message.result);
-    }
-  });
+        // Determine the actual theme to apply (light or dark)
+        let themeToApply = storedPreference;
+        if (storedPreference === 'system') {
+            themeToApply = prefersDark.matches ? 'dark' : 'light';
+            htmlElement.classList.add('theme-preference-system'); // Add class if preference is system
+        }
+        htmlElement.classList.add(themeToApply); // Add 'light' or 'dark' class for actual appearance
 
-  analyzeBtn.addEventListener('click', async function() {
-    console.log(" Analysis button clicked");
-    const selectedText = selectedTextDiv.textContent;
-    
-    if (selectedText === "No text selected. Please select some text on the page.") {
-      console.log(" No text selected for analysis");
-      showError(analysisResultDiv, "Please select some text to analyze.");
-      return;
+        // Update toggle button title if it exists
+        if (themeToggleButton) {
+            const currentIndex = THEMES.indexOf(storedPreference);
+            const nextIndex = (currentIndex + 1) % THEMES.length;
+            const nextTheme = THEMES[nextIndex];
+            themeToggleButton.title = `Change theme (currently ${storedPreference}, next: ${nextTheme})`;
+        }
     }
 
-    // Show loading state
-    showLoading(analysisResultDiv);
-    showLoading(newsResultsDiv);
-    analyzeBtn.disabled = true;
-
-    try {
-      // Ensure background script is ready
-      await ensureBackgroundScriptReady();
-
-      // Send text for fake news analysis with retry
-      const analysisResponse = await sendMessageWithRetry({
-        action: "analyzeText",
-        data: selectedText
-      });
-      
-      console.log(" Received analysis response:", analysisResponse);
-      
-      if (analysisResponse.error) {
-        console.error(" Analysis error:", analysisResponse.error);
-        showError(analysisResultDiv, `Error: ${analysisResponse.error}`);
-        return;
-      }
-
-      // Display analysis result
-      displayAnalysisResult(analysisResponse);
-
-      // Fetch related news with retry
-      console.log(" Fetching related news for:", selectedText);
-      const newsResponse = await sendMessageWithRetry({
-        action: "getNews",
-        data: selectedText
-      });
-      
-      console.log(" Received news response:", newsResponse);
-      
-      if (newsResponse.error) {
-        console.error(" News API error:", newsResponse.error);
-        showError(newsResultsDiv, `Error fetching news: ${newsResponse.error}`);
-        return;
-      }
-
-      if (!newsResponse.news || newsResponse.news.length === 0) {
-        console.log(" No news articles found");
-        newsResultsDiv.innerHTML = "No related news articles found.";
-        return;
-      }
-
-      // Display news results
-      displayNewsResults(newsResponse.news);
-    } catch (error) {
-      console.error(" Error in analysis process:", error);
-      showError(analysisResultDiv, `Error: ${error.message}`);
-    } finally {
-      analyzeBtn.disabled = false;
+    /**
+     * Cycles to the next theme, saves it to storage, and updates the UI.
+     */
+    async function cycleTheme() {
+        try {
+            const currentStoredTheme = await getStoredTheme();
+            const currentIndex = THEMES.indexOf(currentStoredTheme);
+            const nextTheme = THEMES[(currentIndex + 1) % THEMES.length];
+            // Save the *next* theme preference to storage
+            await chrome.storage.local.set({ theme: nextTheme });
+            // Apply the *next* theme preference to the UI immediately
+            applyThemeUI(nextTheme);
+        } catch (error) {
+            console.error("Error cycling theme:", error);
+        }
     }
-  });
 
-  // Function to display analysis result
-  function displayAnalysisResult(result) {
-    const isFakeNews = result.label === "LABEL_1";
-    const confidence = (result.score * 100).toFixed(1);
-    
-    let analysisHTML = `
-      <div class="status-badge ${isFakeNews ? 'fake' : 'real'}">
-        ${isFakeNews ? ' Potential Fake News' : ' Credible Content'}
-      </div>
-      <div class="confidence">Confidence: ${confidence}%</div>
-    `;
+    /**
+     * Initializes the theme on load and sets up listeners.
+     */
+    async function initializeTheme() {
+        const initialTheme = await getStoredTheme();
+        applyThemeUI(initialTheme);
 
-    // Add fact-check results if available
-    if (result.fact_check) {
-      console.log("🔍 Fact-check results:", result.fact_check);
-      if (typeof result.fact_check === 'string') {
-        analysisHTML += `<div class="fact-check">${result.fact_check}</div>`;
-      } else if (Array.isArray(result.fact_check)) {
-        analysisHTML += '<div class="fact-check">';
-        result.fact_check.forEach(source => {
-          analysisHTML += `
-            <div style="margin-bottom: 8px;">
-              <strong>${source.source}</strong><br>
-              ${source.title}
-            </div>
-          `;
+        // Set up theme toggle button if it exists
+        if (themeToggleButton) {
+            themeToggleButton.addEventListener('click', cycleTheme);
+        }
+
+        // Listen for system theme changes
+        prefersDark.addEventListener('change', async () => {
+            const currentStoredTheme = await getStoredTheme();
+            if (currentStoredTheme === 'system') {
+                applyThemeUI('system'); // Re-apply based on new system preference
+            }
         });
-        analysisHTML += '</div>';
-      }
+
+        // Listen for changes from storage (e.g., sidepanel changing the theme)
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+            if (namespace === 'local' && changes.theme) {
+                const newThemePreference = changes.theme.newValue || 'system';
+                applyThemeUI(newThemePreference);
+            }
+        });
     }
 
-    analysisResultDiv.innerHTML = analysisHTML;
-  }
+    // --- End of Theme Handling Code ---
 
-  // Function to display news results
-  function displayNewsResults(news) {
-    let newsHTML = '';
-    news.forEach((article, index) => {
-      console.log(`📄 Processing news article ${index + 1}:`, article.title);
-      newsHTML += `
-        <div class="news-item">
-          <div class="news-title">
-            <a href="${article.url}" target="_blank">${article.title}</a>
-          </div>
-          <div class="news-source">Source: ${article.source}</div>
-          ${article.fact_check ? `
-            <div class="news-fact-check">
-              ${typeof article.fact_check === 'string' 
-                ? article.fact_check 
-                : article.fact_check.map(source => `
-                  <div style="margin-bottom: 4px;">
-                    <strong>${source.source}</strong><br>
-                    ${source.title}
-                  </div>
-                `).join('')}
-            </div>
-          ` : ''}
-        </div>
-      `;
+    // Function to update UI based on analysis result
+    function updateUI(data) {
+        if (!data || (!data.textResult && !data.mediaResult)) {
+            statusDiv.textContent = 'No analysis data available for this page yet.';
+            
+            // Reset status indicator
+            statusIndicator.className = 'status-indicator unknown';
+            statusIndicator.innerHTML = `
+                <div class="flex items-center gap-1.5">
+                    <div class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <span>Unknown</span>
+                </div>
+            `;
+            
+            actionButton.textContent = 'View Details';
+            return;
+        }
+
+        // Display Text Analysis Result (Focus on isFake for popup)
+        if (data.textResult) {
+            if (data.textResult.error) {
+                statusDiv.textContent = `Error: ${data.textResult.error}`;
+                // Set status indicator to unknown
+                statusIndicator.className = 'status-indicator unknown';
+                statusIndicator.innerHTML = `
+                    <div class="flex items-center gap-1.5">
+                        <div class="icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <span>Error</span>
+                    </div>
+                `;
+            } else if (data.textResult.label !== undefined) {
+                const isFake = data.textResult.label === "LABEL_1"; // Assuming LABEL_1 is fake
+                const confidence = (data.textResult.score * 100).toFixed(1);
+                
+                statusDiv.textContent = `${isFake ? 'This content may be misleading' : 'This content appears to be authentic'}`;
+                
+                // Update status indicator
+                if (isFake) {
+                    statusIndicator.className = 'status-indicator fake';
+                    statusIndicator.innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            <div class="icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+                            <span>Misleading</span>
+                        </div>
+                    `;
+                    actionButton.textContent = 'View Issues';
+                } else {
+                    statusIndicator.className = 'status-indicator real';
+                    statusIndicator.innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            <div class="icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <span>Verified</span>
+                        </div>
+                    `;
+                    actionButton.textContent = 'View Verification';
+                }
+            } else {
+                statusDiv.textContent = 'Analysis result format unknown.';
+                statusIndicator.className = 'status-indicator unknown';
+            }
+        } else {
+            statusDiv.textContent = 'Text analysis pending or failed.';
+            statusIndicator.className = 'status-indicator unknown pulse-animation';
+        }
+    }
+
+    // Get the current tab and request results from background script
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+        const currentTab = tabs[0];
+        if (currentTab && currentTab.id) {
+            statusDiv.textContent = 'Loading analysis results...';
+            statusIndicator.className = 'status-indicator unknown pulse-animation';
+            chrome.runtime.sendMessage(
+                { action: "getResultForTab", tabId: currentTab.id },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error("Error getting result:", chrome.runtime.lastError.message);
+                        statusDiv.textContent = 'Error communicating with background script.';
+                        return;
+                    }
+
+                    if (response && response.status === "found") {
+                        console.log("Received data for popup:", response.data);
+                        updateUI(response.data);
+                    } else if (response && response.status === "not_found") {
+                        statusDiv.textContent = 'Analysis not yet complete or page not supported.';
+                        // Keep the pulsing analyzig state
+                        statusIndicator.className = 'status-indicator unknown pulse-animation';
+                    } else {
+                        statusDiv.textContent = 'Could not retrieve analysis results.';
+                        statusIndicator.className = 'status-indicator unknown';
+                    }
+                }
+            );
+        } else {
+            statusDiv.textContent = 'Cannot identify the current tab.';
+            statusIndicator.className = 'status-indicator unknown';
+        }
     });
-    newsResultsDiv.innerHTML = newsHTML;
-  }
+
+    // Setup the action button to open the side panel
+    if (actionButton) {
+        actionButton.addEventListener('click', function() {
+            chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+                if (tabs[0]) {
+                    chrome.sidePanel.open({ tabId: tabs[0].id });
+                }
+            });
+        });
+    }
+    
+    // Initialize theme handling
+    initializeTheme().catch(e => {
+        console.error("Error initializing theme:", e);
+    });
 });

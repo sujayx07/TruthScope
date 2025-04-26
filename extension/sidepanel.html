@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>TruthScope - Detailed Analysis</title>
+  <!-- Using Tailwind v2 for more modern utilities -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* Base styles */
+    html {
+        scroll-behavior: smooth;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      transition: background-color 0.3s ease, color 0.3s ease;
+      /* Default light mode */
+      background-color: #f9fafb; /* gray-50 */
+      color: #1f2937; /* gray-800 */
+    }
+
+    /* Card styles */
+    .card {
+        background-color: white;
+        border-radius: 0.75rem; /* lg */
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* md */
+        padding: 1.5rem; /* p-6 */
+        margin-bottom: 1.5rem; /* mb-6 */
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    /* Loading spinner */
+    .loading-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      border-radius: 0.5rem; /* md */
+      font-weight: 500;
+      color: #6b7280; /* gray-500 */
+      background-color: #f3f4f6; /* gray-100 */
+      min-height: 60px; /* Ensure some height */
+    }
+    .loading-placeholder .spinner {
+      width: 1.25rem; /* w-5 */
+      height: 1.25rem; /* h-5 */
+      border: 3px solid #9ca3af; /* gray-400 */
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 0.75rem; /* mr-3 */
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Status Badge Styles */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.5rem 1rem; /* py-2 px-4 */
+      border-radius: 9999px; /* rounded-full */
+      font-weight: 600; /* semibold */
+      font-size: 0.875rem; /* text-sm */
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    .status-badge.real {
+      background-color: #dcfce7; /* green-100 */
+      color: #166534; /* green-800 */
+    }
+    .status-badge.fake {
+      background-color: #fee2e2; /* red-100 */
+      color: #991b1b; /* red-800 */
+    }
+    .status-badge.unknown {
+      background-color: #e5e7eb; /* gray-200 */
+      color: #4b5563; /* gray-600 */
+    }
+    .status-badge.loading {
+        background-color: #e5e7eb; /* gray-200 */
+        color: #4b5563; /* gray-600 */
+        /* Add spinner inside if needed via JS, or keep simple text */
+    }
+
+
+    /* --- Theme Toggle Button Styles (Improved) --- */
+    .theme-toggle-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.5rem; /* p-2 */
+      border-radius: 9999px; /* rounded-full */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280; /* gray-500 */
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .theme-toggle-button:hover {
+      background-color: #e5e7eb; /* gray-200 */
+      color: #1f2937; /* gray-800 */
+    }
+    .theme-toggle-button svg {
+      width: 1.25rem; /* w-5 */
+      height: 1.25rem; /* h-5 */
+    }
+    /* Hide icons by default */
+    .theme-toggle-button .sun-icon,
+    .theme-toggle-button .moon-icon,
+    .theme-toggle-button .system-icon {
+      display: none;
+    }
+    html.light .theme-toggle-button .sun-icon { display: block; }
+    html.dark .theme-toggle-button .moon-icon { display: block; }
+    html.theme-preference-system .theme-toggle-button .system-icon { display: block; }
+    html.theme-preference-system .theme-toggle-button .sun-icon,
+    html.theme-preference-system .theme-toggle-button .moon-icon {
+        display: none;
+    }
+
+
+    /* --- Dark Mode Styles --- */
+    html.dark body {
+      background-color: #111827; /* gray-900 */
+      color: #d1d5db; /* gray-300 */
+    }
+    html.dark .card {
+        background-color: #1f2937; /* gray-800 */
+        border: 1px solid #374151; /* gray-700 */
+    }
+    html.dark .text-purple-700 { color: #a78bfa; } /* lighter purple (violet-400) */
+    html.dark .text-gray-800 { color: #f3f4f6; } /* gray-100 */
+    html.dark .text-gray-700 { color: #d1d5db; } /* gray-300 */
+    html.dark .text-gray-600 { color: #9ca3af; } /* gray-400 */
+    html.dark .text-gray-500 { color: #6b7280; } /* gray-500 */
+    html.dark .border-gray-200 { border-color: #374151; } /* gray-700 */
+    html.dark .text-blue-600 { color: #60a5fa; } /* blue-400 */
+    html.dark .hover\:text-blue-800:hover { color: #93c5fd; } /* blue-300 */
+    html.dark .text-red-500 { color: #f87171; } /* red-400 */
+
+    html.dark .theme-toggle-button {
+        color: #9ca3af; /* gray-400 */
+     }
+     html.dark .theme-toggle-button:hover {
+        background-color: #374151; /* gray-700 */
+        color: #f9fafb; /* gray-50 */
+     }
+     html.dark .status-badge.fake {
+        background-color: #450a0a; /* darker red-900 */
+        color: #fca5a5; /* red-300 */
+     }
+     html.dark .status-badge.real {
+        background-color: #064e3b; /* darker green-900 */
+        color: #a7f3d0; /* green-200 */
+     }
+     html.dark .status-badge.unknown,
+     html.dark .status-badge.loading {
+        background-color: #374151; /* gray-700 */
+        color: #9ca3af; /* gray-400 */
+     }
+     html.dark .loading-placeholder {
+        color: #9ca3af; /* gray-400 */
+        background-color: #374151; /* gray-700 */
+     }
+     html.dark .loading-placeholder .spinner {
+        border-color: #4b5563; /* gray-600 */
+        border-top-color: transparent;
+     }
+     /* Style links in dark mode */
+     html.dark .source-link, html.dark .news-link {
+        color: #60a5fa; /* blue-400 */
+     }
+     html.dark .source-link:hover, html.dark .news-link:hover {
+        color: #93c5fd; /* blue-300 */
+     }
+
+    /* --- Light Mode Styles (Defaults + Overrides if needed) --- */
+    html:not(.dark) .text-purple-700 { color: #6d28d9; } /* purple-700 */
+    /* Style links in light mode */
+    .source-link, .news-link {
+        color: #2563eb; /* blue-600 */
+        text-decoration: none;
+        transition: color 0.2s ease;
+    }
+    .source-link:hover, .news-link:hover {
+        color: #1d4ed8; /* blue-700 */
+        text-decoration: underline;
+    }
+
+    /* Specific styles for data presentation */
+    .source-item, .news-item {
+        padding: 1rem;
+        border-radius: 0.5rem; /* rounded-md */
+        background-color: #f9fafb; /* gray-50 */
+        border: 1px solid #e5e7eb; /* gray-200 */
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+    html.dark .source-item, html.dark .news-item {
+        background-color: #374151; /* gray-700 */
+        border-color: #4b5563; /* gray-600 */
+    }
+    .source-title, .news-title {
+        font-weight: 600; /* semibold */
+        margin-bottom: 0.25rem; /* mb-1 */
+    }
+    .source-snippet, .news-snippet {
+        font-size: 0.875rem; /* text-sm */
+        color: #4b5563; /* gray-600 */
+        margin-bottom: 0.5rem; /* mb-2 */
+    }
+    html.dark .source-snippet, html.dark .news-snippet {
+        color: #9ca3af; /* gray-400 */
+    }
+    .source-meta, .news-meta {
+        font-size: 0.75rem; /* text-xs */
+        color: #6b7280; /* gray-500 */
+    }
+    html.dark .source-meta, html.dark .news-meta {
+        color: #9ca3af; /* gray-400 */
+    }
+
+    /* --- Profile Icon Placeholder Styles --- */
+    .profile-icon-placeholder {
+        width: 2.5rem; /* w-10 */
+        height: 2.5rem; /* h-10 */
+        border-radius: 9999px; /* rounded-full */
+        background-color: #e5e7eb; /* gray-200 */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #4b5563; /* gray-600 */
+        font-size: 0.75rem; /* text-xs */
+        cursor: pointer; /* Indicate it might be clickable */
+        transition: background-color 0.2s ease;
+    }
+    html.dark .profile-icon-placeholder {
+        background-color: #4b5563; /* gray-600 */
+        color: #d1d5db; /* gray-300 */
+    }
+    .profile-icon-placeholder:hover {
+        background-color: #d1d5db; /* gray-300 */
+    }
+    html.dark .profile-icon-placeholder:hover {
+        background-color: #374151; /* gray-700 */
+    }
+
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-6">
+  <div class="max-w-4xl mx-auto">
+
+    <!-- Header Section -->
+    <div class="flex justify-between items-center mb-6">
+      <!-- Profile Icon Placeholder (Left) -->
+      <div id="profileIconContainer" class="profile-icon-placeholder" title="User Profile">
+        <span>...</span>
+      </div>
+
+      <!-- Title (Center) -->
+      <div class="text-center">
+        <h1 class="text-3xl font-bold text-purple-700">TruthScope Analysis</h1>
+      </div>
+
+      <!-- Theme Toggle Button (Right) -->
+      <button id="themeToggleButton" class="theme-toggle-button" title="Change theme">
+        <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-6.364-.386 1.591-1.591M3 12h2.25m.386-6.364 1.591 1.591" /></svg>
+        <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
+        <svg class="system-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" /></svg>
+      </button>
+    </div>
+
+    <!-- Credibility Score Card -->
+    <div class="card">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Credibility Score</h2>
+      <div class="flex items-center space-x-4">
+        <div id="statusBadge" class="status-badge loading">Loading...</div>
+        <div id="confidence" class="text-gray-600 text-sm"></div>
+      </div>
+    </div>
+
+    <!-- AI Features Card -->
+    <div class="card">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">AI Analysis</h2>
+      <div id="aiSummary" class="prose text-gray-700">
+        <!-- Loading Placeholder -->
+        <div class="loading-placeholder">
+          <div class="spinner"></div>
+          <span>Generating AI analysis...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Media Analysis Card -->
+    <div class="card">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Media Analysis</h2>
+      <div id="mediaAnalysisResults" class="space-y-3">
+        <!-- Loading Placeholder -->
+        <div class="loading-placeholder">
+            <div class="spinner"></div>
+            <span>Analyzing media content...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Related News Card (formerly Fact-Check Sources) -->
+    <div class="card">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Related News</h2>
+      <div id="factCheckResults" class="space-y-3">
+        <!-- Loading Placeholder -->
+        <div class="loading-placeholder">
+            <div class="spinner"></div>
+            <span>Finding related news...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Additional Related News Card (keeping for compatibility) -->
+    <div class="card hidden">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">More News</h2>
+      <div id="newsResults" class="space-y-3">
+         <!-- Loading Placeholder -->
+         <div class="loading-placeholder">
+            <div class="spinner"></div>
+            <span>Loading more news...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
