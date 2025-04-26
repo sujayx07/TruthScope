@@ -126,7 +126,7 @@ const TEST_MODE = true;
 
 // Choose which sample response to use for testing (change this to test different scenarios)
 // Options: 'fakeSample', 'credibleSample', 'uncertainSample'
-const SAMPLE_TO_USE = 'credibleSample'; // Change this to test different scenarios
+const SAMPLE_TO_USE = 'fakeSample'; // Change this to test different scenarios
 
 // Define backend endpoints
 const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/check"; // Your text analysis backend
