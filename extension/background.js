@@ -10,6 +10,11 @@ const SAMPLE_RESPONSES = {
         "Scientists were silenced after discovering the truth",
         "Secret documents reveal the conspiracy"
       ],
+      reasoning: [
+        "The article makes unsubstantiated claims about government coverups without providing verifiable evidence",
+        "Multiple factual inconsistencies were found when cross-referenced with public records",
+        "The sources cited have been previously identified as unreliable or prone to publishing conspiracy theories"
+      ],
       fact_check: [
         {
           source: "FactChecker.org",
@@ -53,6 +58,11 @@ const SAMPLE_RESPONSES = {
       label: "LABEL_0", // Credible content label
       score: 0.92,      // 92% confidence
       highlights: [],   // No misleading highlights
+      reasoning: [
+        "The content accurately cites credible primary sources throughout",
+        "Claims are consistent with verified public records and statements",
+        "Statistical data presented matches official government and academic sources"
+      ],
       fact_check: [
         {
           source: "Reuters Fact Check",
@@ -80,6 +90,11 @@ const SAMPLE_RESPONSES = {
         "Reports suggest potential issues with the data",
         "Some experts have questioned the methodology"
       ],
+      reasoning: [
+        "The article presents information that partially contradicts established research",
+        "Some sources cited have questionable reliability",
+        "The methodology described has limitations that affect the conclusions"
+      ],
       fact_check: [
         {
           source: "Science Daily",
@@ -106,8 +121,12 @@ const SAMPLE_RESPONSES = {
   }
 };
 
-// Optional: Uncomment this line to enable test mode that returns sample data instead of calling real API
-// const TEST_MODE = true;
+// Set to true to use sample data instead of calling real API
+const TEST_MODE = true;
+
+// Choose which sample response to use for testing (change this to test different scenarios)
+// Options: 'fakeSample', 'credibleSample', 'uncertainSample'
+const SAMPLE_TO_USE = 'credibleSample'; // Change this to test different scenarios
 
 // Define backend endpoints
 const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/check"; // Your text analysis backend
@@ -117,18 +136,38 @@ const MEDIA_ANALYSIS_URL = "http://127.0.0.1:5000/check_media"; // Your separate
 let activeConnections = new Set();
 let processingState = {}; // Store analysis results per tab { tabId: { textResult: ..., mediaResult: ... } }
 
+// Auto-initialize test data for tabs when in TEST_MODE
+if (TEST_MODE) {
+  // When a tab is activated, pre-populate it with test data
+  chrome.tabs.onActivated.addListener((activeInfo) => {
+    console.log(`Tab activated: ${activeInfo.tabId}, initializing with sample data: ${SAMPLE_TO_USE}`);
+    processingState[activeInfo.tabId] = {
+      textResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult,
+      mediaResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
+    };
+  });
+  
+  // Also initialize any tabs when the extension is loaded
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (tabs.length > 0) {
+      const currentTabId = tabs[0].id;
+      console.log(`Initializing current tab ${currentTabId} with sample data: ${SAMPLE_TO_USE}`);
+      processingState[currentTabId] = {
+        textResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult,
+        mediaResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
+      };
+    }
+  });
+}
+
 // Handle connection events
 chrome.runtime.onConnect.addListener((port) => {
+  console.assert(port.name === 'analysisPort');
   activeConnections.add(port);
-  
-  // Handle keep-alive connections
-  if (port.name === "keepAlive") {
-    port.onDisconnect.addListener(() => {
-      if (chrome.runtime.lastError) {
-        console.log('Keep-alive port disconnected');
-      }
-    });
-  }
+
+  port.onMessage.addListener((msg) => {
+    // Handle messages from the port if needed
+  });
   
   port.onDisconnect.addListener(() => {
     activeConnections.delete(port);
@@ -157,6 +196,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false; // No async operation
     }
 
+    // Check if we're in TEST_MODE and use sample data instead of making API calls
+    if (TEST_MODE) {
+      console.log(`[Tab ${tabId}] TEST MODE: Using sample data (${SAMPLE_TO_USE})`);
+      
+      // Use timeout to simulate network request
+      setTimeout(() => {
+        // Store sample result for this tab
+        if (!processingState[tabId]) processingState[tabId] = {};
+        processingState[tabId].textResult = SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult;
+        
+        // Send result summary to the specific content script that requested it
+        chrome.tabs.sendMessage(tabId, {
+            action: "analysisComplete",
+            result: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult
+        }).catch(err => console.log(`[Tab ${tabId}] Error sending sample analysisComplete to content script:`, err));
+
+        // Send highlights back to the content script for rendering
+        if (SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult.highlights && 
+            SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult.highlights.length > 0) {
+            chrome.tabs.sendMessage(tabId, {
+                action: "applyHighlights",
+                highlights: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult.highlights
+            }).catch(err => console.log(`[Tab ${tabId}] Error sending sample highlights to content script:`, err));
+        }
+
+        // Notify any open sidepanels for this tab that analysis is complete
+        chrome.runtime.sendMessage({
+            action: "analysisComplete",
+            tabId: tabId,
+            result: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult
+        }).catch(err => console.log(`Error notifying UI components of analysis completion:`, err));
+
+        sendResponse({ status: "success", resultReceived: true });
+      }, 500); // Simulate 500ms delay for API call
+      
+      return true; // Indicate async response
+    }
+
+    // If not in TEST_MODE, proceed with actual API call
     // Limit input size
     const textToSend = articleText.slice(0, 2000); // Adjust limit as needed
 
@@ -197,8 +275,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }).catch(err => console.log(`[Tab ${tabId}] Error sending highlights to content script:`, err));
         }
 
-        // Send result to popup/sidepanel IF THEY ARE OPEN (or they can request it)
-        // We'll implement a request mechanism instead of pushing blindly
+        // Notify any open sidepanels for this tab that analysis is complete
+        chrome.runtime.sendMessage({
+            action: "analysisComplete",
+            tabId: tabId,
+            result: result
+        }).catch(err => console.log(`Error notifying UI components of analysis completion:`, err));
 
         sendResponse({ status: "success", resultReceived: true });
       })
@@ -231,6 +313,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false; // No async operation
     }
 
+    // Check if we're in TEST_MODE and use sample data instead of making API calls
+    if (TEST_MODE) {
+      console.log(`[Tab ${tabId}] TEST MODE: Using sample media data (${SAMPLE_TO_USE})`);
+      
+      // Use timeout to simulate network request
+      setTimeout(() => {
+        // Store sample media result for this tab
+        if (!processingState[tabId]) processingState[tabId] = {};
+        processingState[tabId].mediaResult = SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult;
+        
+        // Send result summary to the content script
+        chrome.tabs.sendMessage(tabId, {
+            action: "mediaAnalysisComplete",
+            result: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
+        }).catch(err => console.log(`[Tab ${tabId}] Error sending sample mediaAnalysisComplete to content script:`, err));
+
+        // Notify any open sidepanels that media analysis is complete
+        chrome.runtime.sendMessage({
+            action: "mediaAnalysisComplete",
+            tabId: tabId,
+            result: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
+        }).catch(err => console.log(`Error notifying UI components of media analysis completion:`, err));
+
+        sendResponse({ status: "success", resultReceived: true });
+      }, 700); // Simulate 700ms delay for media API call (slightly longer than text)
+      
+      return true; // Indicate async response
+    }
+
+    // If not in TEST_MODE, proceed with actual API call
     fetch(MEDIA_ANALYSIS_URL, {
       method: "POST",
       headers: {
@@ -255,11 +367,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!processingState[tabId]) processingState[tabId] = {};
         processingState[tabId].mediaResult = result;
 
-        // Optionally notify content script or UI components
+        // Notify content script of analysis completion
         chrome.tabs.sendMessage(tabId, {
             action: "mediaAnalysisComplete",
             result: result
         }).catch(err => console.log(`[Tab ${tabId}] Error sending mediaAnalysisComplete to content script:`, err));
+        
+        // Notify any open sidepanels that media analysis is complete
+        chrome.runtime.sendMessage({
+            action: "mediaAnalysisComplete",
+            tabId: tabId,
+            result: result
+        }).catch(err => console.log(`Error notifying UI components of media analysis completion:`, err));
 
         sendResponse({ status: "success", resultReceived: true });
       })
