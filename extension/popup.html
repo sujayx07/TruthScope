@@ -132,28 +132,29 @@
 
     /* Adjust Tailwind dark mode styles */
     html.dark .extension-container {
-      background-color: #18181b;
-      color: #a1a1aa;
+      background-color: #111827; /* gray-900 from sidepanel */
+      color: #d1d5db; /* gray-300 from sidepanel */
     }
     html:not(.dark) .extension-container {
-      background-color: #f9fafb; /* Light mode background */
-      color: #374151; /* Light mode text */
+      background-color: #f9fafb; /* gray-50 from sidepanel */
+      color: #1f2937; /* gray-800 from sidepanel */
     }
     html:not(.dark) .logo-badge span {
-        color: #4f46e5; /* Indigo for light mode */
+        color: #4f46e5; /* Keep existing Indigo for light mode logo */
     }
-    html:not(.dark) .status-indicator.unknown {
-      background: #e5e7eb; /* Light gray */
-      color: #4b5563;
+        html:not(.dark) .status-indicator.unknown {
+      background: #e5e7eb; /* gray-200 */
+      color: #4b5563; /* gray-600 */
     }
     html:not(.dark) .status-indicator.real {
-      background: #d1fae5; /* Light green */
-      color: #065f46;
+      background: #dcfce7; /* green-100 */
+      color: #1e984d; /* green-800 */
     }
     html:not(.dark) .status-indicator.fake {
       background: #fee2e2; /* Light red */
       color: #991b1b;
     }
+    /* Keep existing button styles for now, as sidepanel doesn't have a direct equivalent */
     html:not(.dark) .action-button {
       background-color: #6366f1; /* Indigo for light mode */
       color: #ffffff;
@@ -161,7 +162,7 @@
     html:not(.dark) .action-button:hover {
       background-color: #4f46e5;
     }
-    html:not(.dark) #statusMessage {
+        html:not(.dark) #statusMessage {
         color: #6b7280; /* Gray for light mode */
     }
   </style>
