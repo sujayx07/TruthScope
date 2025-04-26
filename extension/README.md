@@ -258,6 +258,89 @@ function displayResults(data) {
 }
 ```
 
+## File Interactions and Communication Architecture
+
+The TruthScope extension relies on a carefully designed communication architecture where each component has specific responsibilities and communicates with others through well-defined channels:
+
+### Content Script (content.js) Interactions
+
+- **Initializes** automatically when a webpage is loaded
+- **Extracts** article content and media elements from the page DOM
+- **Communicates with background.js** by sending:
+  - `processText` messages with article text for credibility analysis
+  - `processMedia` messages with image and video URLs for media manipulation detection
+- **Receives from background.js**:
+  - `applyHighlights` messages containing text segments to highlight on the page
+  - `analysisComplete` notifications when text analysis is finished
+  - `mediaAnalysisComplete` notifications when media analysis is finished
+- **Modifies the webpage** by highlighting potentially misleading content directly in the DOM
+
+### Background Script (background.js) Interactions
+
+- **Acts as the central communication hub** between all components
+- **Maintains state** for each analyzed tab using the `processingState` object, storing:
+  - Text analysis results (`textResult`)
+  - Media analysis results (`mediaResult`)
+- **Handles requests from content.js**:
+  - Processes raw text through the text analysis API
+  - Processes media URLs through the media analysis API
+  - Sends highlight instructions back to content script
+- **Communicates with popup.js and sidepanel.js**:
+  - Responds to `getResultForTab` requests with analysis data
+  - Sends `analysisComplete` and `mediaAnalysisComplete` notifications
+- **Manages backend communication**:
+  - Sends requests to backend API endpoints
+  - Parses and normalizes API responses
+  - Handles errors and retries
+- **Provides a test mode** with sample responses for development and testing
+
+### Popup UI (popup.js) Interactions
+
+- **Initializes** when the user clicks the extension icon
+- **Queries background.js** for current tab analysis results using `getResultForTab`
+- **Updates UI** based on credibility assessment:
+  - Shows a color-coded status indicator (red/green/gray)
+  - Displays a brief summary of the credibility evaluation
+- **Opens sidepanel.js** when the user clicks the "View Details" button
+- **Synchronizes theme preferences** with sidepanel using `chrome.storage.local`
+- **Listens for changes** to analysis results via `chrome.runtime.onMessage`
+
+### Side Panel UI (sidepanel.js) Interactions
+
+- **Initializes** when opened from the popup or via Chrome's side panel feature
+- **Queries background.js** for detailed analysis results using `getResultForTab`
+- **Renders comprehensive results**:
+  - Credibility score and confidence level
+  - AI-generated reasoning about the content
+  - Media analysis findings
+  - Fact-check sources and related information
+- **Synchronizes theme preferences** using `chrome.storage.local`
+- **Listens for updates** from background script to refresh results in real-time
+- **Provides theme customization** that affects all extension UI components
+
+### Data Flow Sequence Diagram
+
+```
+Webpage → content.js → background.js → Backend APIs
+                             ↓
+                        processingState
+                             ↓
+popup.js ← background.js → sidepanel.js
+                ↓                 
+            User Interface
+```
+
+### Theme Management Across Components
+
+Both popup.js and sidepanel.js implement identical theme management logic:
+
+1. **Theme Storage**: Preferences stored in `chrome.storage.local` as 'light', 'dark', or 'system'
+2. **Theme Detection**: System theme detected via `window.matchMedia('(prefers-color-scheme: dark')`
+3. **Theme Synchronization**: Changes in one component reflect in the other through storage events
+4. **Theme Application**: HTML classes control the appearance of UI elements in both components
+
+This architecture ensures a seamless user experience with consistent theme application across all extension UI components.
+
 ## Communication Flow
 
 The extension follows a carefully designed data flow:
