@@ -220,8 +220,10 @@
 
     /* --- Profile Icon Placeholder Styles --- */
     .profile-icon-placeholder {
-        width: 2.5rem; /* w-10 */
-        height: 2.5rem; /* h-10 */
+        min-width: 0.5rem; /* w-10 */
+        min-height: 0.5rem; /* h-10 */
+        max-width: 2.5rem; /* w-10 */
+        max-height: 2.5rem; /* h-10 */
         border-radius: 9999px; /* rounded-full */
         background-color: #e5e7eb; /* gray-200 */
         display: flex;
@@ -252,7 +254,7 @@
     <div class="flex justify-between items-center mb-6">
       <!-- Profile Icon Placeholder (Left) -->
       <div id="profileIconContainer" class="profile-icon-placeholder" title="User Profile">
-        <span>...</span>
+        <img src="https://avatar.iran.liara.run/public">
       </div>
 
       <!-- Title (Center) -->
