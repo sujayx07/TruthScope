@@ -1,51 +1,208 @@
 <!DOCTYPE html>
-<html lang="en" class="dark rounded-xl bg-transparent">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TruthScope</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    html {
+      border-radius: 12px; /* Slightly smaller radius */
+      background-color: transparent; 
+      background: transparent;
+    }
+    body {
+      width: 300px;
+      height: auto; /* Allow height to adjust slightly */
+      min-height: 140px;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      background-color: transparent;
+    }
+
+    .extension-container {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #18181b; /* Slightly darker background */
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); /* Softer shadow */
+      position: relative;
+      color: #a1a1aa; /* Slightly lighter gray text */
+    }
+
+    .content {
+      position: relative;
+      z-index: 10;
+      height: 100%;
+      padding: 16px; /* Consistent padding */
+    }
+
+    .logo-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      /* Removed background, padding, radius, shadow - rely on parent */
+      transition: all 0.3s ease;
+    }
+
+    .logo-badge span {
+        color: #a78bfa; /* Lighter violet */
+    }
+
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 12px; /* Slightly adjusted padding */
+      border-radius: 8px; /* Smaller radius */
+      font-weight: 500;
+      font-size: 0.8rem; /* Slightly smaller font */
+      letter-spacing: 0.01em;
+      transition: all 0.3s ease;
+      box-shadow: none;
+    }
+
+    .status-indicator.unknown {
+      background: #3f3f46; /* Darker gray */
+      color: #e4e4e7;
+    }
+
+    .status-indicator.real {
+      background: #15803d; /* Darker green */
+      color: #dcfce7;
+    }
+
+    .status-indicator.fake {
+      background: #b91c1c; /* Kept red */
+      color: #fee2e2;
+    }
+
+    .action-button {
+      border: none;
+      outline: none;
+      border-radius: 8px; /* Smaller radius */
+      font-weight: 500; /* Slightly less bold */
+      font-size: 0.875rem;
+      padding: 8px 16px; /* Adjusted padding */
+      transition: background-color 0.2s ease, transform 0.1s ease; /* Added transform transition */
+      cursor: pointer;
+      box-shadow: none;
+      background-color: #6b5e9e; /* Updated to a new darker indigo */
+      color: #e0e7ff; /* Lighter text for contrast */
+      margin-top: 8px; /* Added margin top */
+    }
+
+    .action-button:hover {
+      background-color: #312e81; /* Slightly darker hover */
+      transform: translateY(-1px); /* Subtle lift */
+      box-shadow: none;
+    }
+
+    .action-button:active {
+        transform: translateY(0px); /* Press down effect */
+    }
+
+    .pulse-animation {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.7;
+      }
+    }
+
+    .icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon svg {
+      width: 14px; /* Slightly smaller icon */
+      height: 14px;
+    }
+
+    /* Adjust Tailwind dark mode styles */
+    html.dark .extension-container {
+      background-color: #18181b;
+      color: #a1a1aa;
+    }
+    html:not(.dark) .extension-container {
+      background-color: #f9fafb; /* Light mode background */
+      color: #374151; /* Light mode text */
+    }
+    html:not(.dark) .logo-badge span {
+        color: #4f46e5; /* Indigo for light mode */
+    }
+    html:not(.dark) .status-indicator.unknown {
+      background: #e5e7eb; /* Light gray */
+      color: #4b5563;
+    }
+    html:not(.dark) .status-indicator.real {
+      background: #d1fae5; /* Light green */
+      color: #065f46;
+    }
+    html:not(.dark) .status-indicator.fake {
+      background: #fee2e2; /* Light red */
+      color: #991b1b;
+    }
+    html:not(.dark) .action-button {
+      background-color: #6366f1; /* Indigo for light mode */
+      color: #ffffff;
+    }
+    html:not(.dark) .action-button:hover {
+      background-color: #4f46e5;
+    }
+    html:not(.dark) #statusMessage {
+        color: #6b7280; /* Gray for light mode */
+    }
+  </style>
 </head>
-<body class="dark w-[300px] h-auto min-h-[140px] overflow-hidden font-['Inter',_sans-serif] m-0 p-0 bg-transparent">
-  <div class="w-full h-full rounded-xl overflow-hidden bg-zinc-900 shadow-lg relative text-zinc-400">
+<body class=""> <!-- Remove dark class from body -->
+  <div class="extension-container">
     <!-- Content -->
-    <div class="relative z-10 h-full p-4 flex flex-col items-center justify-between">
+    <div class="content flex flex-col items-center justify-between">
       <!-- Top section -->
       <div class="w-full flex justify-between items-center mb-4">
         <!-- Logo -->
-        <div class="flex items-center gap-2 transition-all duration-300 ease-in-out">
+        <div class="logo-badge">
           <img src="icon16.png" alt="TruthScope" class="w-5 h-5">
-          <span class="font-semibold text-violet-400">TruthScope</span>
+          <span class="font-semibold">TruthScope</span>
         </div>
 
-        <!-- Status indicator -->
-        <!-- Base classes: inline-flex items-center justify-center px-3 py-1.5 rounded-lg font-medium text-xs tracking-wide transition-all duration-300 ease-in-out shadow-none -->
-        <!-- State classes will be applied by JS -->
-        <div id="statusIndicator" class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg font-medium text-xs tracking-wide transition-all duration-300 ease-in-out shadow-none bg-zinc-700 text-zinc-200 animate-pulse">
-          <div class="flex items-center gap-1.5">
-            <!-- Loading spinner (initial state) -->
-            <div class="flex items-center justify-center">
-              <svg class="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
+        <!-- Right side controls -->
+        <div class="flex items-center gap-2">
+            <!-- Status indicator -->
+            <div id="statusIndicator" class="status-indicator unknown pulse-animation">
+             <!-- Loading spinner (initial state) -->
+             <div class="flex items-center gap-1.5">
+                <div class="icon">
+                  <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </div>
+                <span>Analyzing</span>
+              </div>
             </div>
-            <span>Analyzing</span>
-          </div>
         </div>
       </div>
 
       <!-- Middle section - can be used for additional info -->
-      <div class="w-full text-center mb-4">
-        <!-- Class will be updated by JS -->
-        <p id="statusMessage" class="text-sm text-gray-600">Checking content...</p>
+      <div class="w-full text-center mb-4"> <!-- Increased margin bottom -->
+        <p id="statusMessage" class="text-sm">Checking content...</p> <!-- Adjusted text color class -->
       </div>
 
       <!-- Action button -->
-      <!-- Base classes: border-none outline-none rounded-lg font-medium text-sm px-4 py-2 transition duration-200 ease-in-out cursor-pointer shadow-none mt-2 w-full hover:-translate-y-0.5 active:translate-y-0 -->
-      <!-- State classes will be applied by JS -->
-      <button id="actionButton" class="border-none outline-none rounded-lg font-medium text-sm px-4 py-2 transition duration-200 ease-in-out cursor-pointer shadow-none mt-2 w-full hover:-translate-y-0.5 active:translate-y-0 bg-indigo-600 text-indigo-50 hover:bg-indigo-700">
+      <button id="actionButton" class="action-button w-full">
         View Details
       </button>
     </div>

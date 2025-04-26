@@ -1,15 +1,18 @@
 // Function to check if background script is ready
 async function ensureBackgroundScriptReady() {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ action: "ping" }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.log(" Background script not ready, retrying...");
-        setTimeout(() => ensureBackgroundScriptReady().then(resolve), 100);
-      } else {
-        console.log(" Background script ready");
-        resolve();
-      }
-    });
+    const attemptPing = () => {
+      chrome.runtime.sendMessage({ action: "ping" }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.log("Background script not ready, retrying...");
+          setTimeout(attemptPing, 150); // Slightly increased retry delay
+        } else {
+          console.log("Background script ready");
+          resolve();
+        }
+      });
+    };
+    attemptPing();
   });
 }
 
@@ -42,20 +45,56 @@ async function sendMessageWithRetry(message, maxRetries = 3) {
 let currentTabId = null;
 let currentUrl = null;
 
+const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+async function getThemePreference() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['theme'], (result) => {
+      resolve(result.theme || 'system'); // Default to system
+    });
+  });
+}
+
+function applyTheme(themePreference) {
+  const htmlElement = document.documentElement;
+  htmlElement.classList.remove('light', 'dark'); // Remove existing theme classes
+
+  let themeToApply = themePreference;
+  if (themePreference === 'system') {
+    themeToApply = prefersDark.matches ? 'dark' : 'light';
+  }
+
+  if (themeToApply === 'dark') {
+    htmlElement.classList.add('dark');
+  } else {
+    htmlElement.classList.add('light'); // Explicitly add light class
+  }
+}
+
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async function() {
   console.log("Popup initialized");
-  
+
+  // Initialize Theme based on storage
+  const initialTheme = await getThemePreference();
+  applyTheme(initialTheme);
+  prefersDark.addEventListener('change', async () => {
+      // Re-apply theme if system preference changes and current setting is 'system'
+      const currentStoredTheme = await getThemePreference();
+      if (currentStoredTheme === 'system') {
+          applyTheme('system');
+      }
+  });
+
   try {
     // Ensure background script is ready
     await ensureBackgroundScriptReady();
-    
+
     // Get current tab
     const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
     if (!tab) {
       throw new Error("No active tab found");
     }
-    
     currentTabId = tab.id;
     currentUrl = tab.url;
     console.log("Current tab:", currentUrl);
@@ -75,136 +114,156 @@ document.addEventListener('DOMContentLoaded', async function() {
     chrome.storage.local.get(['lastAnalysis'], async function(result) {
       if (result.lastAnalysis && result.lastAnalysis.url === currentUrl) {
         console.log("Found existing analysis:", result.lastAnalysis);
-        // Show existing analysis
         const status = result.lastAnalysis.label === "LABEL_1" ? 'fake' : 'real';
         updateUI(status);
       } else {
-        console.log("No existing analysis found, starting new analysis");
-        // Start new analysis
+        console.log("No existing analysis found or URL mismatch, starting new analysis");
         updateUI('unknown');
-        await requestAnalysis();
-      }
-    });
-
-    // Listen for analysis updates
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-      if (namespace === 'local' && changes.lastAnalysis) {
-        const newAnalysis = changes.lastAnalysis.newValue;
-        console.log("Analysis updated:", newAnalysis);
-        
-        if (newAnalysis && newAnalysis.url === currentUrl) {
-          const status = newAnalysis.label === "LABEL_1" ? 'fake' : 'real';
-          updateUI(status);
+        if (currentUrl && (currentUrl.startsWith('http:') || currentUrl.startsWith('https:'))) {
+           await requestAnalysis();
+        } else {
+            console.log("Skipping analysis for non-http(s) URL:", currentUrl);
+            updateUI('unknown');
+            document.getElementById('statusMessage').textContent = 'Analysis unavailable for this page.';
         }
       }
     });
+
+    // Listen for analysis and theme updates from storage
+    chrome.storage.onChanged.addListener(async (changes, namespace) => {
+      if (namespace === 'local') {
+          if (changes.lastAnalysis) {
+            const newAnalysis = changes.lastAnalysis.newValue;
+            console.log("Analysis updated:", newAnalysis);
+
+            // Check if the update is for the current URL before updating UI
+            const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+            if (tab && newAnalysis && newAnalysis.url === tab.url) {
+              const status = newAnalysis.label === "LABEL_1" ? 'fake' : 'real';
+              updateUI(status);
+            } else if (!tab) {
+                console.log("No active tab found, cannot compare URL for analysis update.");
+            }
+          }
+          // Listen for theme changes initiated by the sidepanel
+          if (changes.theme) {
+              const newTheme = changes.theme.newValue || 'system';
+              console.log("Theme changed in storage:", newTheme);
+              applyTheme(newTheme);
+          }
+      }
+    });
+
   } catch (error) {
     console.error("Error in popup initialization:", error);
     updateUI('unknown');
+    document.getElementById('statusMessage').textContent = 'Initialization error.';
   }
 });
 
 // Request content analysis
 async function requestAnalysis() {
-  if (!currentTabId) return;
+  if (!currentTabId || !(currentUrl && (currentUrl.startsWith('http:') || currentUrl.startsWith('https:')))) {
+      console.log("Skipping analysis request for invalid tab/URL.");
+      return;
+  }
 
   try {
+    console.log("Requesting analysis from content script for tab:", currentTabId);
     // Send message to content script to start analysis
     await chrome.tabs.sendMessage(currentTabId, {
       action: 'analyzeContent'
     });
+    console.log("Analysis request sent.");
   } catch (error) {
     console.error('Failed to request analysis:', error);
     // If content script isn't ready, inject it and retry
+    console.log("Content script might not be ready, attempting injection.");
     await injectContentScript();
+    // Wait a bit for the script to load before retrying
     setTimeout(async () => {
       try {
+        console.log("Retrying analysis request after injection.");
         await chrome.tabs.sendMessage(currentTabId, {
           action: 'analyzeContent'
         });
+         console.log("Retry analysis request sent.");
       } catch (retryError) {
         console.error('Retry failed:', retryError);
+        updateUI('unknown'); // Show error state
+        document.getElementById('statusMessage').textContent = 'Failed to analyze content.';
       }
-    }, 100);
+    }, 500); // Increased delay slightly
   }
 }
 
-// Inject content script if not already present
 async function injectContentScript() {
   try {
+    console.log("Injecting content script into tab:", currentTabId);
     await chrome.scripting.executeScript({
       target: { tabId: currentTabId },
       files: ['content.js']
     });
+    console.log("Content script injected successfully.");
   } catch (error) {
-    console.error('Failed to inject content script:', error);
+    // Ignore errors if the script is already injected or the page is restricted
+    if (error.message.includes('Cannot access') || error.message.includes('Receiving end does not exist') || error.message.includes('Cannot create script')) {
+        console.warn('Could not inject content script (might be restricted page, already injected, or invalid context):', error.message);
+    } else {
+        console.error('Failed to inject content script:', error);
+    }
   }
 }
 
 // Function to update UI based on analysis result
 function updateUI(status) {
-  const bgGradient = document.getElementById('bgGradient');
   const statusIndicator = document.getElementById('statusIndicator');
   const actionButton = document.getElementById('actionButton');
   const statusMessage = document.getElementById('statusMessage');
-  
+
   // Remove existing status classes
-  bgGradient.classList.remove('real', 'fake');
-  actionButton.classList.remove('default', 'real', 'fake');
-  
+  actionButton.classList.remove('bg-green-600', 'hover:bg-green-700', 'bg-red-600', 'hover:bg-red-700', 'bg-indigo-600', 'hover:bg-indigo-700');
+  actionButton.classList.remove('dark:bg-green-700', 'dark:hover:bg-green-800', 'dark:bg-red-700', 'dark:hover:bg-red-800', 'dark:bg-indigo-500', 'dark:hover:bg-indigo-600');
+
   // Remove pulse animation when result is available
   if (status !== 'unknown') {
     statusIndicator.classList.remove('pulse-animation');
   } else {
     statusIndicator.classList.add('pulse-animation');
   }
-  
+
   // Add new status class if result is available
   if (status === 'real') {
-    bgGradient.classList.add('real');
-    actionButton.classList.add('real');
     actionButton.textContent = 'View Verification';
     statusMessage.textContent = 'This content appears to be authentic';
-    statusMessage.className = 'text-sm text-green-700 font-medium';
-    
-    // Update status indicator
     statusIndicator.className = 'status-indicator real';
     statusIndicator.innerHTML = `
       <div class="flex items-center gap-1.5">
-        <div class="icon text-green-600">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        <div class="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
         <span>Verified</span>
       </div>
     `;
   } else if (status === 'fake') {
-    bgGradient.classList.add('fake');
-    actionButton.classList.add('fake');
     actionButton.textContent = 'View Issues';
     statusMessage.textContent = 'This content may be misleading';
-    statusMessage.className = 'text-sm text-red-700 font-medium';
-    
-    // Update status indicator
     statusIndicator.className = 'status-indicator fake';
     statusIndicator.innerHTML = `
       <div class="flex items-center gap-1.5">
-        <div class="icon text-red-600">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        <div class="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
         <span>Misleading</span>
       </div>
     `;
-  } else {
-    actionButton.classList.add('default');
+  } else { // 'unknown' state
     actionButton.textContent = 'View Details';
     statusMessage.textContent = 'Checking content authenticity...';
-    statusMessage.className = 'text-sm text-gray-600';
-    
-    // Update status indicator
     statusIndicator.className = 'status-indicator unknown pulse-animation';
     statusIndicator.innerHTML = `
       <div class="flex items-center gap-1.5">
@@ -218,4 +277,6 @@ function updateUI(status) {
       </div>
     `;
   }
+  // Re-apply theme based on current preference in case styles depend on it
+  getThemePreference().then(applyTheme);
 }
