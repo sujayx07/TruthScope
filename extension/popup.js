@@ -1,282 +1,231 @@
-// Function to check if background script is ready
-async function ensureBackgroundScriptReady() {
-  return new Promise((resolve) => {
-    const attemptPing = () => {
-      chrome.runtime.sendMessage({ action: "ping" }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.log("Background script not ready, retrying...");
-          setTimeout(attemptPing, 150); // Slightly increased retry delay
-        } else {
-          console.log("Background script ready");
-          resolve();
-        }
-      });
-    };
-    attemptPing();
-  });
-}
-
-// Function to safely send message with retry
-async function sendMessageWithRetry(message, maxRetries = 3) {
-  return new Promise((resolve, reject) => {
-    let attempts = 0;
-    
-    function trySend() {
-      attempts++;
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          console.log(` Attempt ${attempts} failed:`, chrome.runtime.lastError);
-          if (attempts < maxRetries) {
-            setTimeout(trySend, 1000); // Wait 1 second before retry
-          } else {
-            reject(new Error(`Failed after ${maxRetries} attempts: ${chrome.runtime.lastError.message}`));
-          }
-        } else {
-          resolve(response);
-        }
-      });
-    }
-    
-    trySend();
-  });
-}
-
-// State management
-let currentTabId = null;
-let currentUrl = null;
-
-const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
-
-async function getThemePreference() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['theme'], (result) => {
-      resolve(result.theme || 'system'); // Default to system
-    });
-  });
-}
-
-function applyTheme(themePreference) {
-  const htmlElement = document.documentElement;
-  htmlElement.classList.remove('light', 'dark'); // Remove existing theme classes
-
-  let themeToApply = themePreference;
-  if (themePreference === 'system') {
-    themeToApply = prefersDark.matches ? 'dark' : 'light';
-  }
-
-  if (themeToApply === 'dark') {
-    htmlElement.classList.add('dark');
-  } else {
-    htmlElement.classList.add('light'); // Explicitly add light class
-  }
-}
-
-// Initialize popup
-document.addEventListener('DOMContentLoaded', async function() {
-  console.log("Popup initialized");
-
-  // Initialize Theme based on storage
-  const initialTheme = await getThemePreference();
-  applyTheme(initialTheme);
-  prefersDark.addEventListener('change', async () => {
-      // Re-apply theme if system preference changes and current setting is 'system'
-      const currentStoredTheme = await getThemePreference();
-      if (currentStoredTheme === 'system') {
-          applyTheme('system');
-      }
-  });
-
-  try {
-    // Ensure background script is ready
-    await ensureBackgroundScriptReady();
-
-    // Get current tab
-    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-    if (!tab) {
-      throw new Error("No active tab found");
-    }
-    currentTabId = tab.id;
-    currentUrl = tab.url;
-    console.log("Current tab:", currentUrl);
-
-    // Setup action button
+document.addEventListener('DOMContentLoaded', function() {
+    const analyzeButton = document.getElementById('analyzeButton');
+    const resultDiv = document.getElementById('result');
+    const statusDiv = document.getElementById('statusMessage');
+    const statusIndicator = document.getElementById('statusIndicator');
     const actionButton = document.getElementById('actionButton');
-    actionButton.addEventListener('click', async function() {
-      console.log("Opening side panel");
-      try {
-        await chrome.sidePanel.open({ tabId: currentTabId });
-      } catch (error) {
-        console.error("Error opening side panel:", error);
-      }
-    });
+    const themeToggleButton = document.getElementById('themeToggleButton'); // Add reference to theme toggle button
 
-    // Get the latest analysis for this URL
-    chrome.storage.local.get(['lastAnalysis'], async function(result) {
-      if (result.lastAnalysis && result.lastAnalysis.url === currentUrl) {
-        console.log("Found existing analysis:", result.lastAnalysis);
-        const status = result.lastAnalysis.label === "LABEL_1" ? 'fake' : 'real';
-        updateUI(status);
-      } else {
-        console.log("No existing analysis found or URL mismatch, starting new analysis");
-        updateUI('unknown');
-        if (currentUrl && (currentUrl.startsWith('http:') || currentUrl.startsWith('https:'))) {
-           await requestAnalysis();
-        } else {
-            console.log("Skipping analysis for non-http(s) URL:", currentUrl);
-            updateUI('unknown');
-            document.getElementById('statusMessage').textContent = 'Analysis unavailable for this page.';
+    // --- Theme Handling Code ---
+    const THEMES = ['light', 'dark', 'system'];
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+    /**
+     * Gets the stored theme preference from chrome.storage.local.
+     * @returns {Promise<string>} The stored theme ('light', 'dark', or 'system').
+     */
+    async function getStoredTheme() {
+        try {
+            const result = await chrome.storage.local.get(['theme']);
+            return THEMES.includes(result.theme) ? result.theme : 'system';
+        } catch (error) {
+            console.error("Error getting theme preference:", error);
+            return 'system'; // Default to system on error
         }
-      }
-    });
-
-    // Listen for analysis and theme updates from storage
-    chrome.storage.onChanged.addListener(async (changes, namespace) => {
-      if (namespace === 'local') {
-          if (changes.lastAnalysis) {
-            const newAnalysis = changes.lastAnalysis.newValue;
-            console.log("Analysis updated:", newAnalysis);
-
-            // Check if the update is for the current URL before updating UI
-            const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-            if (tab && newAnalysis && newAnalysis.url === tab.url) {
-              const status = newAnalysis.label === "LABEL_1" ? 'fake' : 'real';
-              updateUI(status);
-            } else if (!tab) {
-                console.log("No active tab found, cannot compare URL for analysis update.");
-            }
-          }
-          // Listen for theme changes initiated by the sidepanel
-          if (changes.theme) {
-              const newTheme = changes.theme.newValue || 'system';
-              console.log("Theme changed in storage:", newTheme);
-              applyTheme(newTheme);
-          }
-      }
-    });
-
-  } catch (error) {
-    console.error("Error in popup initialization:", error);
-    updateUI('unknown');
-    document.getElementById('statusMessage').textContent = 'Initialization error.';
-  }
-});
-
-// Request content analysis
-async function requestAnalysis() {
-  if (!currentTabId || !(currentUrl && (currentUrl.startsWith('http:') || currentUrl.startsWith('https:')))) {
-      console.log("Skipping analysis request for invalid tab/URL.");
-      return;
-  }
-
-  try {
-    console.log("Requesting analysis from content script for tab:", currentTabId);
-    // Send message to content script to start analysis
-    await chrome.tabs.sendMessage(currentTabId, {
-      action: 'analyzeContent'
-    });
-    console.log("Analysis request sent.");
-  } catch (error) {
-    console.error('Failed to request analysis:', error);
-    // If content script isn't ready, inject it and retry
-    console.log("Content script might not be ready, attempting injection.");
-    await injectContentScript();
-    // Wait a bit for the script to load before retrying
-    setTimeout(async () => {
-      try {
-        console.log("Retrying analysis request after injection.");
-        await chrome.tabs.sendMessage(currentTabId, {
-          action: 'analyzeContent'
-        });
-         console.log("Retry analysis request sent.");
-      } catch (retryError) {
-        console.error('Retry failed:', retryError);
-        updateUI('unknown'); // Show error state
-        document.getElementById('statusMessage').textContent = 'Failed to analyze content.';
-      }
-    }, 500); // Increased delay slightly
-  }
-}
-
-async function injectContentScript() {
-  try {
-    console.log("Injecting content script into tab:", currentTabId);
-    await chrome.scripting.executeScript({
-      target: { tabId: currentTabId },
-      files: ['content.js']
-    });
-    console.log("Content script injected successfully.");
-  } catch (error) {
-    // Ignore errors if the script is already injected or the page is restricted
-    if (error.message.includes('Cannot access') || error.message.includes('Receiving end does not exist') || error.message.includes('Cannot create script')) {
-        console.warn('Could not inject content script (might be restricted page, already injected, or invalid context):', error.message);
-    } else {
-        console.error('Failed to inject content script:', error);
     }
-  }
-}
 
-// Function to update UI based on analysis result
-function updateUI(status) {
-  const statusIndicator = document.getElementById('statusIndicator');
-  const actionButton = document.getElementById('actionButton');
-  const statusMessage = document.getElementById('statusMessage');
+    /**
+     * Applies the theme to the UI based on the stored preference and system settings.
+     * @param {string} storedPreference - The user's selected preference ('light', 'dark', or 'system').
+     */
+    function applyThemeUI(storedPreference) {
+        const htmlElement = document.documentElement;
+        htmlElement.classList.remove('light', 'dark', 'theme-preference-system'); // Remove all theme-related classes
 
-  // Remove existing status classes
-  actionButton.classList.remove('bg-green-600', 'hover:bg-green-700', 'bg-red-600', 'hover:bg-red-700', 'bg-indigo-600', 'hover:bg-indigo-700');
-  actionButton.classList.remove('dark:bg-green-700', 'dark:hover:bg-green-800', 'dark:bg-red-700', 'dark:hover:bg-red-800', 'dark:bg-indigo-500', 'dark:hover:bg-indigo-600');
+        // Determine the actual theme to apply (light or dark)
+        let themeToApply = storedPreference;
+        if (storedPreference === 'system') {
+            themeToApply = prefersDark.matches ? 'dark' : 'light';
+            htmlElement.classList.add('theme-preference-system'); // Add class if preference is system
+        }
+        htmlElement.classList.add(themeToApply); // Add 'light' or 'dark' class for actual appearance
 
-  // Remove pulse animation when result is available
-  if (status !== 'unknown') {
-    statusIndicator.classList.remove('pulse-animation');
-  } else {
-    statusIndicator.classList.add('pulse-animation');
-  }
+        // Update toggle button title if it exists
+        if (themeToggleButton) {
+            const currentIndex = THEMES.indexOf(storedPreference);
+            const nextIndex = (currentIndex + 1) % THEMES.length;
+            const nextTheme = THEMES[nextIndex];
+            themeToggleButton.title = `Change theme (currently ${storedPreference}, next: ${nextTheme})`;
+        }
+    }
 
-  // Add new status class if result is available
-  if (status === 'real') {
-    actionButton.textContent = 'View Verification';
-    statusMessage.textContent = 'This content appears to be authentic';
-    statusIndicator.className = 'status-indicator real';
-    statusIndicator.innerHTML = `
-      <div class="flex items-center gap-1.5">
-        <div class="icon">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <span>Verified</span>
-      </div>
-    `;
-  } else if (status === 'fake') {
-    actionButton.textContent = 'View Issues';
-    statusMessage.textContent = 'This content may be misleading';
-    statusIndicator.className = 'status-indicator fake';
-    statusIndicator.innerHTML = `
-      <div class="flex items-center gap-1.5">
-        <div class="icon">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </div>
-        <span>Misleading</span>
-      </div>
-    `;
-  } else { // 'unknown' state
-    actionButton.textContent = 'View Details';
-    statusMessage.textContent = 'Checking content authenticity...';
-    statusIndicator.className = 'status-indicator unknown pulse-animation';
-    statusIndicator.innerHTML = `
-      <div class="flex items-center gap-1.5">
-        <div class="icon">
-          <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </div>
-        <span>Analyzing</span>
-      </div>
-    `;
-  }
-  // Re-apply theme based on current preference in case styles depend on it
-  getThemePreference().then(applyTheme);
-}
+    /**
+     * Cycles to the next theme, saves it to storage, and updates the UI.
+     */
+    async function cycleTheme() {
+        try {
+            const currentStoredTheme = await getStoredTheme();
+            const currentIndex = THEMES.indexOf(currentStoredTheme);
+            const nextTheme = THEMES[(currentIndex + 1) % THEMES.length];
+            // Save the *next* theme preference to storage
+            await chrome.storage.local.set({ theme: nextTheme });
+            // Apply the *next* theme preference to the UI immediately
+            applyThemeUI(nextTheme);
+        } catch (error) {
+            console.error("Error cycling theme:", error);
+        }
+    }
+
+    /**
+     * Initializes the theme on load and sets up listeners.
+     */
+    async function initializeTheme() {
+        const initialTheme = await getStoredTheme();
+        applyThemeUI(initialTheme);
+
+        // Set up theme toggle button if it exists
+        if (themeToggleButton) {
+            themeToggleButton.addEventListener('click', cycleTheme);
+        }
+
+        // Listen for system theme changes
+        prefersDark.addEventListener('change', async () => {
+            const currentStoredTheme = await getStoredTheme();
+            if (currentStoredTheme === 'system') {
+                applyThemeUI('system'); // Re-apply based on new system preference
+            }
+        });
+
+        // Listen for changes from storage (e.g., sidepanel changing the theme)
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+            if (namespace === 'local' && changes.theme) {
+                const newThemePreference = changes.theme.newValue || 'system';
+                applyThemeUI(newThemePreference);
+            }
+        });
+    }
+
+    // --- End of Theme Handling Code ---
+
+    // Function to update UI based on analysis result
+    function updateUI(data) {
+        if (!data || (!data.textResult && !data.mediaResult)) {
+            statusDiv.textContent = 'No analysis data available for this page yet.';
+            
+            // Reset status indicator
+            statusIndicator.className = 'status-indicator unknown';
+            statusIndicator.innerHTML = `
+                <div class="flex items-center gap-1.5">
+                    <div class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <span>Unknown</span>
+                </div>
+            `;
+            
+            actionButton.textContent = 'View Details';
+            return;
+        }
+
+        // Display Text Analysis Result (Focus on isFake for popup)
+        if (data.textResult) {
+            if (data.textResult.error) {
+                statusDiv.textContent = `Error: ${data.textResult.error}`;
+                // Set status indicator to unknown
+                statusIndicator.className = 'status-indicator unknown';
+                statusIndicator.innerHTML = `
+                    <div class="flex items-center gap-1.5">
+                        <div class="icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <span>Error</span>
+                    </div>
+                `;
+            } else if (data.textResult.label !== undefined) {
+                const isFake = data.textResult.label === "LABEL_1"; // Assuming LABEL_1 is fake
+                const confidence = (data.textResult.score * 100).toFixed(1);
+                
+                statusDiv.textContent = `${isFake ? 'This content may be misleading' : 'This content appears to be authentic'}`;
+                
+                // Update status indicator
+                if (isFake) {
+                    statusIndicator.className = 'status-indicator fake';
+                    statusIndicator.innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            <div class="icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+                            <span>Misleading</span>
+                        </div>
+                    `;
+                    actionButton.textContent = 'View Issues';
+                } else {
+                    statusIndicator.className = 'status-indicator real';
+                    statusIndicator.innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            <div class="icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <span>Verified</span>
+                        </div>
+                    `;
+                    actionButton.textContent = 'View Verification';
+                }
+            } else {
+                statusDiv.textContent = 'Analysis result format unknown.';
+                statusIndicator.className = 'status-indicator unknown';
+            }
+        } else {
+            statusDiv.textContent = 'Text analysis pending or failed.';
+            statusIndicator.className = 'status-indicator unknown pulse-animation';
+        }
+    }
+
+    // Get the current tab and request results from background script
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+        const currentTab = tabs[0];
+        if (currentTab && currentTab.id) {
+            statusDiv.textContent = 'Loading analysis results...';
+            statusIndicator.className = 'status-indicator unknown pulse-animation';
+            chrome.runtime.sendMessage(
+                { action: "getResultForTab", tabId: currentTab.id },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error("Error getting result:", chrome.runtime.lastError.message);
+                        statusDiv.textContent = 'Error communicating with background script.';
+                        return;
+                    }
+
+                    if (response && response.status === "found") {
+                        console.log("Received data for popup:", response.data);
+                        updateUI(response.data);
+                    } else if (response && response.status === "not_found") {
+                        statusDiv.textContent = 'Analysis not yet complete or page not supported.';
+                        // Keep the pulsing analyzig state
+                        statusIndicator.className = 'status-indicator unknown pulse-animation';
+                    } else {
+                        statusDiv.textContent = 'Could not retrieve analysis results.';
+                        statusIndicator.className = 'status-indicator unknown';
+                    }
+                }
+            );
+        } else {
+            statusDiv.textContent = 'Cannot identify the current tab.';
+            statusIndicator.className = 'status-indicator unknown';
+        }
+    });
+
+    // Setup the action button to open the side panel
+    if (actionButton) {
+        actionButton.addEventListener('click', function() {
+            chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+                if (tabs[0]) {
+                    chrome.sidePanel.open({ tabId: tabs[0].id });
+                }
+            });
+        });
+    }
+    
+    // Initialize theme handling
+    initializeTheme().catch(e => {
+        console.error("Error initializing theme:", e);
+    });
+});
