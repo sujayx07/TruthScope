@@ -268,6 +268,7 @@ def fact_check_claims(claims: List[str]) -> List[Dict[str, str]]:
     all_results = []
     # Limit number of claims checked for performance and API usage reasons.
     claims_to_check = claims[:FACT_CHECK_CLAIM_LIMIT]
+    tool_errors = [] # Keep track of errors encountered
 
     for claim_text in claims_to_check:
          # Limit query size due to potential API restrictions.
@@ -305,19 +306,34 @@ def fact_check_claims(claims: List[str]) -> List[Dict[str, str]]:
                                  "review_rating": str(review.get("textualRating", "N/A"))
                              })
          except requests.exceptions.Timeout:
-             logging.error(f"Timeout calling Fact Check API for claim: {truncated_claim}")
-             # Decide whether to raise immediately or continue with other claims
-             # For now, log and continue, agent can report partial success/failure
-             # Could also raise ApiError here if one failure should stop all.
+             err_msg = f"Timeout calling Fact Check API for claim: {truncated_claim}"
+             logging.error(err_msg)
+             tool_errors.append(err_msg) # Record error
+             # Continue to next claim, but record the failure
          except requests.exceptions.RequestException as e:
-             logging.error(f"Error calling Google Fact Check API: {e}")
-             # Log and continue, or raise ApiError(f"Fact Check API request failed: {e}")
+             err_msg = f"Error calling Google Fact Check API: {e}"
+             logging.error(err_msg)
+             tool_errors.append(err_msg) # Record error
+             # Continue to next claim
          except json.JSONDecodeError as e:
-             logging.error(f"Error decoding Google Fact Check API response: {e}")
-             # Log and continue, or raise ApiError("Invalid JSON response from Fact Check API.")
+             err_msg = f"Error decoding Google Fact Check API response: {e}"
+             logging.error(err_msg)
+             tool_errors.append(err_msg) # Record error
+             # Continue to next claim
          except Exception as e:
-             logging.error(f"Unexpected error during fact check for claim '{truncated_claim}': {e}")
-             # Log and continue, or raise ApiError(f"Unexpected error during fact check: {e}")
+             err_msg = f"Unexpected error during fact check for claim '{truncated_claim}': {e}"
+             logging.error(err_msg)
+             tool_errors.append(err_msg) # Record error
+             # Continue to next claim
+
+    # After checking all claims, if any errors occurred, raise a single ApiError
+    # This informs the main loop that the tool execution was problematic.
+    if tool_errors:
+        combined_error_msg = f"Fact check tool encountered errors: {'; '.join(tool_errors)}"
+        # Log the combined error as well
+        logging.error(combined_error_msg)
+        # Raise an error that the main analyze_article function can catch
+        raise ApiError(combined_error_msg)
 
     logging.info(f"Found {len(all_results)} fact checks for {len(claims_to_check)} claims.")
     return all_results
@@ -391,13 +407,14 @@ try:
     Process:
     1.  Use `check_database_for_url` to get the source domain verdict. Handle 'invalid_url'.
     2.  Analyze the input URL and text. Extract key claims or topics.
-    3.  Use `search_google_news` with relevant queries (like the article title or key entities) to find related recent news.
-    4.  Identify 1-{FACT_CHECK_CLAIM_LIMIT} key claims from the article text that seem questionable or central. Use `fact_check_claims` to check them.
+    3.  Use `search_google_news` with relevant queries (like the article title or key entities) to find related recent news. This tool returns a list of {{ "title": "...", "link": "...", "snippet": "..." }}.
+    4.  Identify 1-{FACT_CHECK_CLAIM_LIMIT} key claims from the article text that seem questionable or central. Use `fact_check_claims` to check them. This tool returns a list of {{ "source": "...", "title": "...", "url": "...", "claim": "...", "review_rating": "..." }}.
     5.  Synthesize the information gathered from the tools and the article text.
     6.  Formulate a final assessment based on the evidence, including a confidence score (0.0 to 1.0) and a label ('LABEL_1' for likely fake/misleading, 'LABEL_0' for likely real/credible).
     7.  Highlight specific text snippets from the article that are questionable or unsupported.
     8.  Provide reasoning for the label decision, citing evidence from tools or text analysis.
-    9.  Include results from `fact_check_claims` and `search_google_news` in the final output.
+    9.  **CRITICAL:** Merge results from BOTH `fact_check_claims` AND `search_google_news` into the `fact_check` field of the final output JSON. If `search_google_news` was called successfully and returned results, those results MUST be included in the `fact_check` array using the specified format.
+    10. Write some highlights from the article text that are questionable or unsupported in the `highlights` field of the final output JSON.
 
     Output Format:
     ***IMPORTANT: Respond ONLY with a valid JSON object. Do NOT include any introductory text, explanations, apologies, or markdown formatting like ```json ... ``` around the JSON object.***
@@ -406,22 +423,33 @@ try:
       "textResult": {{ 
         "label": "LABEL_1" or "LABEL_0", // LABEL_1 for likely fake/misleading, LABEL_0 for likely real/credible
         "score": float, // Confidence score (0.0 to 1.0) for the label
-        "highlights": ["string"], // List of specific text snippets from the article that are questionable or unsupported
+        "highlights": ["string"], // List of specific text snippets from the article itself that are questionable or unsupported
         "reasoning": ["string"], // List of reasons explaining the label decision, citing evidence from tools or text analysis. **If a tool call failed (raised an error), mention the tool name and the reason for failure here (e.g., "Fact check failed due to API timeout", "Database check failed: connection error").**
-        "fact_check": [ // Results from fact_check_claims tool and the search_google_news (empty list if tools failed or no claims checked). Merge the results from both tools into this list.
+        "fact_check": [ // **MUST include merged results from BOTH fact_check_claims AND search_google_news.** If search_google_news succeeded, its results MUST be here. Empty list ONLY if BOTH tools failed or returned no results.
+          // Structure for items from fact_check_claims:
           {{
 
-            "source": "string",
-            "title": "string",
-            "url": "string",
-            "claim": "string" // The claim that was checked (or the API's textual rating if claim not available)
+            "source": "string", // From fact_check_claims result
+            "title": "string", // From fact_check_claims result
+            "url": "string", // From fact_check_claims result
+            "claim": "string" // From fact_check_claims result (or review_rating if claim missing)
+          }},
+          // Structure for items from search_google_news:
+          {{
+
+            "source": "Google News Search", // Use this literal string
+            "title": "string", // From search_google_news result's 'title'
+            "url": "string", // From search_google_news result's 'link'
+            "claim": "string" // From search_google_news result's 'snippet'
           }}
+          // ... more items if applicable
         ]
       }}
     }}
+    MAKE SURE THERE IS NO EXTRA TEXT OR MARKUP AROUND THE JSON RESPONSE OR SPACES.
     Focus on providing clear reasoning based on the evidence found. In cases of missing or conflicting information, your decision is final.
-    Make sure all the fields under "textResult" are present in the JSON response, even if some values are empty lists.
-    If any tool fails, include the error message in the 'reasoning' field and set the corresponding tool's result (e.g., 'fact_check') to an empty list.
+    Make sure all the fields under "textResult" are present in the JSON response, even if some values are empty lists (e.g., if no highlights were found, "highlights": []). 
+    If any tool fails, include the error message in the 'reasoning' field and do not include its results in 'fact_check'.Make up the results of the empty field yourself only if the tool fails, like the highlights.
     '''
 
 
@@ -472,6 +500,12 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
             final_text = response.text
             logging.info("Received final text response from Gemini after function calls.")
             try:
+                # Strip markdown fences if present
+                if final_text.startswith("```json"):
+                    final_text = final_text.strip().removeprefix("```json").removesuffix("```").strip()
+                elif final_text.startswith("```"):
+                     final_text = final_text.strip().removeprefix("```").removesuffix("```").strip()
+
                 analysis_result = json.loads(final_text)
                 logging.info(f"Analysis successful for URL: {url}")
                 # Optional: Update DB
@@ -547,12 +581,12 @@ def handle_analyze():
 # Optional: Add a basic root endpoint for health check or info
 @app.route('/')
 def index():
-    # Check if the model initialized correctly
-    model_status = "Initialized" if model else "Not Initialized (Check Logs)"
+    # Check if the client initialized correctly
+    client_status = "Initialized" if client else "Not Initialized (Check Logs)" # Check client instead of model
     db_status = "Pool Available" if db_pool else "Pool Not Available (Check Logs)"
     return jsonify({
         "message": "TruthScope Analysis Backend",
-        "model_status": model_status,
+        "client_status": client_status, # Use client_status
         "database_status": db_status
     })
 
