@@ -435,7 +435,7 @@ If any tool fails, include the error message in the 'reasoning' field and set th
     model = client.models.generate_content(
         model=GEMINI_MODEL_NAME,
         config=config,
-        contents="Hi", # Empty string to start with no content
+        contents="", # Empty string to start with no content
         # Safety settings can be adjusted if needed
         # safety_settings=[...]
     )
