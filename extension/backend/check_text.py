@@ -10,6 +10,7 @@ from dotenv import load_dotenv # For .env file support
 from google import genai
 from google.genai import types
 from typing import Optional, List, Dict, Any, Union # For improved type hinting
+from flask import Flask, request, jsonify # Added Flask imports
 
 # --- Load Environment Variables ---
 load_dotenv() # Load variables from .env file if it exists
@@ -381,7 +382,7 @@ try:
 
     # Define the system instruction for the agent
     # Enhanced clarity on JSON output and error reporting
-    system_instruction = f"""You are an AI agent designed to analyze news articles for potential misinformation.
+    system_instruction = f'''You are an AI agent designed to analyze news articles for potential misinformation.
 You will be given the URL and the text content of an article.
 Your goal is to determine if the article is likely 'real' or 'fake' and provide supporting evidence.
 
@@ -410,29 +411,21 @@ The JSON object must have the following structure:
     "score": float, // Confidence score (0.0 to 1.0) for the label
     "highlights": ["string"], // List of specific text snippets from the article that are questionable or unsupported
     "reasoning": ["string"], // List of reasons explaining the label decision, citing evidence from tools or text analysis. **If a tool call failed (raised an error), mention the tool name and the reason for failure here (e.g., "Fact check failed due to API timeout", "Database check failed: connection error").**
-    "fact_check": [ // Results from fact_check_claims tool (empty list if tool failed or no claims checked)
+    "fact_check": [ // Results from fact_check_claims tool and the search_google_news (empty list if tools failed or no claims checked). Merge the results from both tools into this list.
       {{
+
         "source": "string",
         "title": "string",
         "url": "string",
-        "claim": "string", // The claim that was checked
-        "review_rating": "string" // e.g. "True", "False", "Misleading"
+        "claim": "string" // The claim that was checked (or the API's textual rating if claim not available)
       }}
-    ],
-    "related_news": [ // Results from search_google_news (empty list if tool failed or no relevant results)
-        {{
-            "title": "string",
-            "link": "string",
-            "snippet": "string"
-        }}
-    ],
-    "source_verdict": "string" // Result from check_database_for_url ('{VERDICT_REAL}', '{VERDICT_FAKE}', '{VERDICT_NOT_FOUND}', 'invalid_url', or 'db_error' if it failed)
+    ]
   }}
 }}
 Focus on providing clear reasoning based on the evidence found. In cases of missing or conflicting information, your decision is final.
-Make sure all the fields are present in the JSON response, even if some values are empty or indicate failure. Make sure you fill them in based on your logic.
-If any tool fails, include the error message in the 'reasoning' field and set the corresponding tool's result to an empty list.
-"""
+Make sure all the fields under "textResult" are present in the JSON response, even if some values are empty lists.
+If any tool fails, include the error message in the 'reasoning' field and set the corresponding tool's result (e.g., 'fact_check') to an empty list.
+'''
 
     # Create the generative model instance
     model = genai.GenerativeModel(
@@ -555,50 +548,70 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
         return {"error": f"An unexpected server error occurred during analysis."}
 
 
-# --- Example Usage & Cleanup ---
+# --- Flask App Setup ---
+app = Flask(__name__)
+
+# Ensure configuration and DB pool are checked/initialized when the app starts
+# Note: In production, consider more robust initialization (e.g., Flask app factory)
+try:
+    check_configuration()
+except ConfigurationError as e:
+    logging.critical(f"CRITICAL CONFIGURATION ERROR: {e}. Flask app might not function correctly.")
+    # Decide if the app should fail to start entirely
+    # raise e # Uncomment to prevent app start on config error
+
+@app.route('/analyze', methods=['POST'])
+def handle_analyze():
+    """Flask endpoint to handle article analysis requests."""
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
+
+    data = request.get_json()
+    url = data.get('url')
+    article_text = data.get('article_text')
+
+    if not url or not article_text:
+        return jsonify({"error": "Missing 'url' or 'article_text' in JSON payload"}), 400
+
+    # Call the existing analysis function
+    result = analyze_article(url, article_text)
+
+    # Determine status code based on result
+    status_code = 500 if "error" in result else 200
+    # If specific errors occurred (like config), maybe return 503 Service Unavailable
+    if "error" in result and "Agent configuration failed" in result["error"]:
+        status_code = 503
+
+    return jsonify(result), status_code
+
+# Optional: Add a basic root endpoint for health check or info
+@app.route('/')
+def index():
+    # Check if the model initialized correctly
+    model_status = "Initialized" if model else "Not Initialized (Check Logs)"
+    db_status = "Pool Available" if db_pool else "Pool Not Available (Check Logs)"
+    return jsonify({
+        "message": "TruthScope Analysis Backend",
+        "model_status": model_status,
+        "database_status": db_status
+    })
+
+
+# --- Server Execution & Cleanup ---
 if __name__ == "__main__":
-    logging.info("Running check_text.py as main script...")
+    # Note: Flask's development server is not recommended for production.
+    # Use a production-ready WSGI server like Gunicorn or Waitress.
+    logging.info("Starting Flask development server...")
+    # Use host='0.0.0.0' to make it accessible on the network
+    # Use debug=True for development (enables auto-reloading, detailed errors)
+    # Set debug=False for production environments
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
-    # Example Input (Replace with actual data)
-    example_url = "http://example-news-site.com/article123"
-    example_text = """
-    A shocking new study claims that chocolate cures the common cold.
-    Researchers at the Institute of Made-Up Science found that compounds in cocoa
-    beans directly attack the cold virus. "The government admitted to covering up
-    the evidence for years," said lead researcher Dr. Fibber. Scientists were
-    silenced after discovering the truth, according to leaked documents.
-    The study recommends eating three large chocolate bars per day.
-    Secret documents reveal the conspiracy.
-    """
-
-    if model: # Only run if model initialized successfully
-        # Run the analysis
-        result = analyze_article(example_url, example_text)
-
-        # Print the result nicely
-        print("\n--- Analysis Result ---")
-        print(json.dumps(result, indent=2))
-    else:
-        print("\n--- Analysis Skipped ---")
-        print("Model could not be initialized. Check configuration and logs.")
-
-
-    # Example 2: Another article (Optional)
-    # example_url_2 = "https://www.credible-source.org/real-discovery"
-    # example_text_2 = """
-    # Scientists have published peer-reviewed findings indicating a modest correlation
-    # between regular exercise and improved immune response. The study, involving 500
-    # participants over two years, suggests moderate activity may shorten cold duration.
-    # Further research is needed to confirm these preliminary results. Public health
-    # officials caution against overstating the findings.
-    # """
-    # if model:
-    #     result_2 = analyze_article(example_url_2, example_text_2)
-    #     print("\n--- Analysis Result 2 ---")
-    #     print(json.dumps(result_2, indent=2))
-
-    # --- Cleanup ---
-    # Close the database pool when the application exits
-    # In a real server, this would happen during shutdown.
-    close_db_pool()
+    # Cleanup code (like closing DB pool) might need adjustment
+    # depending on the WSGI server and deployment strategy.
+    # For the dev server, this might run on Ctrl+C, but it's not guaranteed.
+    # Consider using Flask's @app.teardown_appcontext for cleanup per request
+    # or signal handling for graceful shutdown in production.
+    logging.info("Flask server stopping...")
+    close_db_pool() # Attempt cleanup
     logging.info("Script finished.")
