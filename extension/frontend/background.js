@@ -122,43 +122,43 @@ const SAMPLE_RESPONSES = {
 };
 
 // Set to true to use sample data instead of calling real API
-const TEST_MODE = true;
+const TEST_MODE = false; // Set to false to use the real backend
 
 // Choose which sample response to use for testing (change this to test different scenarios)
 // Options: 'fakeSample', 'credibleSample', 'uncertainSample'
-const SAMPLE_TO_USE = 'fakeSample'; // Change this to test different scenarios
+// const SAMPLE_TO_USE = 'fakeSample'; // No longer needed when TEST_MODE is false
 
 // Define backend endpoints
-const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/check_text"; // Your text analysis backend
-const MEDIA_ANALYSIS_URL = "http://127.0.0.1:5000/check_media"; // Your separate media analysis backend
+const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/analyze"; // Updated URL for Flask backend
+// const MEDIA_ANALYSIS_URL = "http://127.0.0.1:5000/check_media"; // Commented out - Not implemented in current backend
 
 // Keep track of active connections and processing state per tab
 let activeConnections = new Set();
 let processingState = {}; // Store analysis results per tab { tabId: { textResult: ..., mediaResult: ... } }
 
 // Auto-initialize test data for tabs when in TEST_MODE
-if (TEST_MODE) {
-  // When a tab is activated, pre-populate it with test data
-  chrome.tabs.onActivated.addListener((activeInfo) => {
-    console.log(`Tab activated: ${activeInfo.tabId}, initializing with sample data: ${SAMPLE_TO_USE}`);
-    processingState[activeInfo.tabId] = {
-      textResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult,
-      mediaResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
-    };
-  });
+// if (TEST_MODE) { // Commented out test mode initialization
+//   // When a tab is activated, pre-populate it with test data
+//   chrome.tabs.onActivated.addListener((activeInfo) => {
+//     console.log(`Tab activated: ${activeInfo.tabId}, initializing with sample data: ${SAMPLE_TO_USE}`);
+//     processingState[activeInfo.tabId] = {
+//       textResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult,
+//       mediaResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
+//     };
+//   });
   
-  // Also initialize any tabs when the extension is loaded
-  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-    if (tabs.length > 0) {
-      const currentTabId = tabs[0].id;
-      console.log(`Initializing current tab ${currentTabId} with sample data: ${SAMPLE_TO_USE}`);
-      processingState[currentTabId] = {
-        textResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult,
-        mediaResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
-      };
-    }
-  });
-}
+//   // Also initialize any tabs when the extension is loaded
+//   chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+//     if (tabs.length > 0) {
+//       const currentTabId = tabs[0].id;
+//       console.log(`Initializing current tab ${currentTabId} with sample data: ${SAMPLE_TO_USE}`);
+//       processingState[currentTabId] = {
+//         textResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].textResult,
+//         mediaResult: SAMPLE_RESPONSES[SAMPLE_TO_USE].mediaResult
+//       };
+//     }
+//   });
+// }
 
 // Handle connection events
 chrome.runtime.onConnect.addListener((port) => {
@@ -238,54 +238,90 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Limit input size
     const textToSend = articleText.slice(0, 2000); // Adjust limit as needed
 
-    fetch(TEXT_ANALYSIS_URL, {
+    fetch(TEXT_ANALYSIS_URL, { // Use the updated URL
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json"
       },
-      body: JSON.stringify({ url: url, text: textToSend })
+      // Send url and article_text in the body as expected by Flask backend
+      body: JSON.stringify({ url: url, article_text: textToSend }) 
     })
       .then(async response => {
         console.log(`[Tab ${tabId}] Text Analysis API Response Status:`, response.status);
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+          // Try to parse error JSON from backend if possible
+          let errorDetail = errorText;
+          try {
+              const errorJson = JSON.parse(errorText);
+              errorDetail = errorJson.error || errorText;
+          } catch(e) { /* Ignore if not JSON */ }
+          throw new Error(`HTTP ${response.status}: ${errorDetail}`);
         }
         return response.json();
       })
       .then(result => {
-        console.log(`[Tab ${tabId}] Text backend analysis result:`, result);
+        // The backend returns the full structure, potentially including 'error' or the 'textResult'
+        console.log(`[Tab ${tabId}] Backend analysis result:`, result);
 
-        // Store result for this tab
-        if (!processingState[tabId]) processingState[tabId] = {};
-        processingState[tabId].textResult = result;
-
-        // Send result summary to the specific content script that requested it
-        chrome.tabs.sendMessage(tabId, {
-            action: "analysisComplete",
-            result: result // Send the whole result for now
-        }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisComplete to content script:`, err));
-
-        // Send highlights back to the content script for rendering
-        if (result.highlights && result.highlights.length > 0) {
+        // Check if the backend returned an error object
+        if (result && result.error) {
+            console.error(`[Tab ${tabId}] Backend returned an error: ${result.error}`);
+            // Store error state
+            if (!processingState[tabId]) processingState[tabId] = {};
+            processingState[tabId].textResult = { error: result.error };
+            // Notify content script of error
             chrome.tabs.sendMessage(tabId, {
-                action: "applyHighlights",
-                highlights: result.highlights
-            }).catch(err => console.log(`[Tab ${tabId}] Error sending highlights to content script:`, err));
+                action: "analysisError",
+                error: result.error
+            }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisError to content script:`, err));
+            sendResponse({ status: "error", error: result.error });
+            return; // Stop further processing on backend error
         }
 
-        // Notify any open sidepanels for this tab that analysis is complete
-        chrome.runtime.sendMessage({
-            action: "analysisComplete",
-            tabId: tabId,
-            result: result
-        }).catch(err => console.log(`Error notifying UI components of analysis completion:`, err));
+        // Assuming the backend returns the expected structure with textResult
+        if (result && result.textResult) {
+            // Store result for this tab
+            if (!processingState[tabId]) processingState[tabId] = {};
+            processingState[tabId].textResult = result.textResult; // Store only the textResult part
 
-        sendResponse({ status: "success", resultReceived: true });
+            // Send result summary to the specific content script that requested it
+            chrome.tabs.sendMessage(tabId, {
+                action: "analysisComplete",
+                result: result.textResult // Send only the textResult part
+            }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisComplete to content script:`, err));
+
+            // Send highlights back to the content script for rendering
+            if (result.textResult.highlights && result.textResult.highlights.length > 0) {
+                chrome.tabs.sendMessage(tabId, {
+                    action: "applyHighlights",
+                    highlights: result.textResult.highlights
+                }).catch(err => console.log(`[Tab ${tabId}] Error sending highlights to content script:`, err));
+            }
+
+            // Notify any open sidepanels/popups for this tab that analysis is complete
+            chrome.runtime.sendMessage({
+                action: "analysisComplete",
+                tabId: tabId,
+                result: result.textResult // Send only the textResult part
+            }).catch(err => console.log(`Error notifying UI components of analysis completion:`, err));
+
+            sendResponse({ status: "success", resultReceived: true });
+        } else {
+             // Handle cases where the backend response is valid but not in the expected format
+             console.error(`[Tab ${tabId}] Backend response did not contain expected 'textResult'. Response:`, result);
+             if (!processingState[tabId]) processingState[tabId] = {};
+             processingState[tabId].textResult = { error: "Invalid response format from backend." };
+             chrome.tabs.sendMessage(tabId, {
+                 action: "analysisError",
+                 error: "Invalid response format from backend."
+             }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisError (invalid format) to content script:`, err));
+             sendResponse({ status: "error", error: "Invalid response format from backend." });
+        }
       })
       .catch(error => {
-        console.error(`[Tab ${tabId}] ❌ Error during text analysis:`, error);
+        console.error(`[Tab ${tabId}] ❌ Error during text analysis fetch:`, error);
         // Store error state
         if (!processingState[tabId]) processingState[tabId] = {};
         processingState[tabId].textResult = { error: error.message };
@@ -303,6 +339,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // Handle media processing requests from content script
+  /* // Commenting out the entire media processing block as it's not supported by the current backend
   if (message.action === "processMedia" && tabId) {
     console.log(`🖼️ [Tab ${tabId}] Received media for analysis:`, message.data.url);
     const { url, imageSources, videoSources } = message.data;
@@ -399,6 +436,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     return true; // Indicate async response
   }
+  */ // End of commented out media processing block
 
   // Handle requests for results from popup or sidepanel
   if (message.action === "getResultForTab") {

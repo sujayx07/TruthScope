@@ -447,6 +447,7 @@ try:
       }}
     }}
     MAKE SURE THERE IS NO EXTRA TEXT OR MARKUP AROUND THE JSON RESPONSE OR SPACES.
+    DO NOT MAKE UP ANY LINKS, LEAVE THEM BLANK IF NOT FOUND. OR GIVE THE REAL ONE
     Focus on providing clear reasoning based on the evidence found. In cases of missing or conflicting information, your decision is final.
     Make sure all the fields under "textResult" are present in the JSON response, even if some values are empty lists (e.g., if no highlights were found, "highlights": []). 
     If any tool fails, include the error message in the 'reasoning' field and do not include its results in 'fact_check'.Make up the results of the empty field yourself only if the tool fails, like the highlights.
