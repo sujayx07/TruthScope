@@ -367,7 +367,7 @@ def update_analysis_results(url: str, analysis_result: Dict[str, Any]) -> None:
 try:
     check_configuration() # Check config and initialize DB pool
     if GOOGLE_API_KEY:
-        genai.configure(api_key=GOOGLE_API_KEY)
+        client = genai.Client(api_key=GOOGLE_API_KEY)
     else:
         # This case should be caught by check_configuration, but as a safeguard:
         raise ConfigurationError("Google API Key is missing after configuration check.")
@@ -428,10 +428,14 @@ If any tool fails, include the error message in the 'reasoning' field and set th
 '''
 
     # Create the generative model instance
-    model = genai.GenerativeModel(
-        model_name=GEMINI_MODEL_NAME,
+    config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         tools=agent_tools,
+    )
+    model = client.models.generate_content(
+        model=GEMINI_MODEL_NAME,
+        config=config,
+        contents="Hi", # Empty string to start with no content
         # Safety settings can be adjusted if needed
         # safety_settings=[...]
     )
