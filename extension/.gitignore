@@ -1,5 +1,17 @@
 # Environment variables
 .env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python Virtual Environment
+venv/
+env/
+.venv/
 
 # Node.js
 node_modules/
@@ -37,3 +49,18 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# Python Distribution / Packaging
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+share/python-wheels/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Python Testing
+.coverage
+.coverage.*
+.pytest_cache/
