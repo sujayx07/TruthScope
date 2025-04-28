@@ -362,95 +362,75 @@ def update_analysis_results(url: str, analysis_result: Dict[str, Any]) -> None:
 
 # --- Gemini Client Setup ---
 
-# Configure the Gemini client (will use GOOGLE_API_KEY loaded earlier)
-# Do this after check_configuration ensures the key exists
 try:
     check_configuration() # Check config and initialize DB pool
     if GOOGLE_API_KEY:
+        # Initialize the client first
         client = genai.Client(api_key=GOOGLE_API_KEY)
+        logging.info("Gemini client initialized.")
     else:
-        # This case should be caught by check_configuration, but as a safeguard:
         raise ConfigurationError("Google API Key is missing after configuration check.")
 
-    # Define the tools for the agent
+    # Define the tools for the agent (using the actual functions)
     agent_tools = [
         check_database_for_url,
         search_google_news,
         fact_check_claims,
-        # update_analysis_results # Keep commented unless agent should directly trigger DB update
     ]
 
     # Define the system instruction for the agent
-    # Enhanced clarity on JSON output and error reporting
     system_instruction = f'''You are an AI agent designed to analyze news articles for potential misinformation.
-You will be given the URL and the text content of an article.
-Your goal is to determine if the article is likely 'real' or 'fake' and provide supporting evidence.
+    You will be given the URL and the text content of an article.
+    Your goal is to determine if the article is likely 'real' or 'fake' and provide supporting evidence.
 
-Available Tools:
-- check_database_for_url: Check a trusted database for a verdict on the article's source domain ('{VERDICT_REAL}', '{VERDICT_FAKE}', '{VERDICT_NOT_FOUND}', 'invalid_url').
-- search_google_news: Search for recent related news articles on Google to check for corroboration or conflicting reports. Returns a list of results or raises an error.
-- fact_check_claims: Verify specific claims made in the article text using a fact-checking API. Returns a list of fact checks or raises an error.
+    Available Tools:
+    - check_database_for_url: Check a trusted database for a verdict on the article's source domain ('{VERDICT_REAL}', '{VERDICT_FAKE}', '{VERDICT_NOT_FOUND}', 'invalid_url').
+    - search_google_news: Search for recent related news articles on Google to check for corroboration or conflicting reports. Returns a list of results or raises an error.
+    - fact_check_claims: Verify specific claims made in the article text using a fact-checking API. Returns a list of fact checks or raises an error.
 
-Process:
-1.  Use `check_database_for_url` to get the source domain verdict. Handle 'invalid_url'.
-2.  Analyze the input URL and text. Extract key claims or topics.
-3.  Use `search_google_news` with relevant queries (like the article title or key entities) to find related recent news.
-4.  Identify 1-{FACT_CHECK_CLAIM_LIMIT} key claims from the article text that seem questionable or central. Use `fact_check_claims` to check them.
-5.  Synthesize the information gathered from the tools and the article text.
-6.  Formulate a final assessment based on the evidence, including a confidence score (0.0 to 1.0) and a label ('LABEL_1' for likely fake/misleading, 'LABEL_0' for likely real/credible).
-7.  Highlight specific text snippets from the article that are questionable or unsupported.
-8.  Provide reasoning for the label decision, citing evidence from tools or text analysis.
-9.  Include results from `fact_check_claims` and `search_google_news` in the final output.
+    Process:
+    1.  Use `check_database_for_url` to get the source domain verdict. Handle 'invalid_url'.
+    2.  Analyze the input URL and text. Extract key claims or topics.
+    3.  Use `search_google_news` with relevant queries (like the article title or key entities) to find related recent news.
+    4.  Identify 1-{FACT_CHECK_CLAIM_LIMIT} key claims from the article text that seem questionable or central. Use `fact_check_claims` to check them.
+    5.  Synthesize the information gathered from the tools and the article text.
+    6.  Formulate a final assessment based on the evidence, including a confidence score (0.0 to 1.0) and a label ('LABEL_1' for likely fake/misleading, 'LABEL_0' for likely real/credible).
+    7.  Highlight specific text snippets from the article that are questionable or unsupported.
+    8.  Provide reasoning for the label decision, citing evidence from tools or text analysis.
+    9.  Include results from `fact_check_claims` and `search_google_news` in the final output.
 
-Output Format:
-***IMPORTANT: Respond ONLY with a valid JSON object. Do NOT include any introductory text, explanations, apologies, or markdown formatting like ```json ... ``` around the JSON object.***
-The JSON object must have the following structure:
-{{
-  "textResult": {{
-    "label": "LABEL_1" or "LABEL_0", // LABEL_1 for likely fake/misleading, LABEL_0 for likely real/credible
-    "score": float, // Confidence score (0.0 to 1.0) for the label
-    "highlights": ["string"], // List of specific text snippets from the article that are questionable or unsupported
-    "reasoning": ["string"], // List of reasons explaining the label decision, citing evidence from tools or text analysis. **If a tool call failed (raised an error), mention the tool name and the reason for failure here (e.g., "Fact check failed due to API timeout", "Database check failed: connection error").**
-    "fact_check": [ // Results from fact_check_claims tool and the search_google_news (empty list if tools failed or no claims checked). Merge the results from both tools into this list.
-      {{
+    Output Format:
+    ***IMPORTANT: Respond ONLY with a valid JSON object. Do NOT include any introductory text, explanations, apologies, or markdown formatting like ```json ... ``` around the JSON object.***
+    The JSON object must have the following structure:
+    {{ 
+      "textResult": {{ 
+        "label": "LABEL_1" or "LABEL_0", // LABEL_1 for likely fake/misleading, LABEL_0 for likely real/credible
+        "score": float, // Confidence score (0.0 to 1.0) for the label
+        "highlights": ["string"], // List of specific text snippets from the article that are questionable or unsupported
+        "reasoning": ["string"], // List of reasons explaining the label decision, citing evidence from tools or text analysis. **If a tool call failed (raised an error), mention the tool name and the reason for failure here (e.g., "Fact check failed due to API timeout", "Database check failed: connection error").**
+        "fact_check": [ // Results from fact_check_claims tool and the search_google_news (empty list if tools failed or no claims checked). Merge the results from both tools into this list.
+          {{
 
-        "source": "string",
-        "title": "string",
-        "url": "string",
-        "claim": "string" // The claim that was checked (or the API's textual rating if claim not available)
+            "source": "string",
+            "title": "string",
+            "url": "string",
+            "claim": "string" // The claim that was checked (or the API's textual rating if claim not available)
+          }}
+        ]
       }}
-    ]
-  }}
-}}
-Focus on providing clear reasoning based on the evidence found. In cases of missing or conflicting information, your decision is final.
-Make sure all the fields under "textResult" are present in the JSON response, even if some values are empty lists.
-If any tool fails, include the error message in the 'reasoning' field and set the corresponding tool's result (e.g., 'fact_check') to an empty list.
-'''
+    }}
+    Focus on providing clear reasoning based on the evidence found. In cases of missing or conflicting information, your decision is final.
+    Make sure all the fields under "textResult" are present in the JSON response, even if some values are empty lists.
+    If any tool fails, include the error message in the 'reasoning' field and set the corresponding tool's result (e.g., 'fact_check') to an empty list.
+    '''
 
-    # Create the generative model instance
-    config = types.GenerateContentConfig(
-        system_instruction=system_instruction,
-        tools=agent_tools,
-    )
-    model = client.models.generate_content(
-        model=GEMINI_MODEL_NAME,
-        config=config,
-        contents="", # Empty string to start with no content
-        # Safety settings can be adjusted if needed
-        # safety_settings=[...]
-    )
-    logging.info(f"Gemini model '{GEMINI_MODEL_NAME}' initialized.")
 
 except ConfigurationError as e:
     logging.critical(f"Configuration failed: {e}")
-    model = None # Ensure model is None if setup fails
-    # Optionally exit or raise further if running as a script
-    # exit(1)
+    # model remains None
 except Exception as e:
-    logging.critical(f"Failed to initialize Gemini model or DB pool: {e}")
-    model = None
-    # exit(1)
-
+    logging.critical(f"Failed to initialize Gemini client/model or DB pool: {e}")
+    # model remains None
 
 # --- Main Analysis Function ---
 
@@ -469,87 +449,63 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
     logging.info(f"--- Analyzing Article --- URL: {url}")
     logging.debug(f"Text: {article_text[:200]}...")
 
-    if model is None:
-        logging.error("Analysis cannot proceed: Model not initialized due to configuration errors.")
-        return {"error": "Agent configuration failed. Check logs."}
     if not url or not article_text:
         return {"error": "URL and article text must be provided."}
 
-    # Prepare the prompt for the model
-    prompt = f"Analyze the following article:\nURL: {url}\n\nText:\n{article_text}"
+    # Prepare the initial prompt for the model
+    initial_prompt = f"Analyze the following article:\nURL: {url}\n\nText:\n{article_text}"
 
     try:
-        # Use generate_content for single-turn analysis with automatic function calling
-        response = model.generate_content(
-            prompt,
-            generation_config=types.GenerationConfig(
-                response_mime_type="application/json", # Request JSON output
-                temperature=GEMINI_TEMPERATURE
-            )
-            # tool_config={'function_calling_config': 'AUTO'} # AUTO is default
+        chat = client.chats.create(
+            model="gemini-2.0-flash",
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                tools=agent_tools,
+            ),
+        )
+        response = chat.send_message(
+             [initial_prompt], 
         )
 
-        # --- Robust Response Handling ---
-        logging.debug(f"Raw Gemini Response: {response}")
+        # After the loop (handled by the SDK), the final response should be text
+        if hasattr(response, 'text'):
+            final_text = response.text
+            logging.info("Received final text response from Gemini after function calls.")
+            try:
+                analysis_result = json.loads(final_text)
+                logging.info(f"Analysis successful for URL: {url}")
+                # Optional: Update DB
+                try:
+                    update_analysis_results(url, analysis_result)
+                except DatabaseError as db_err:
+                    logging.error(f"Failed to store analysis result in DB: {db_err}")
+                return analysis_result
+            except json.JSONDecodeError as e:
+                logging.error(f"Error decoding final model JSON response: {e}")
+                logging.error(f"Raw final model response text: {final_text}")
+                # Include the raw text in the error for debugging
+                return {"error": "Model did not return valid JSON in the final response.", "raw_response": final_text}
+        else:
+            # Handle cases where the response might not have text (e.g., blocked)
+            logging.error("Final response from Gemini did not contain text.")
+            # Log details if available
+            if hasattr(response, 'prompt_feedback'):
+                 logging.error(f"Prompt Feedback: {response.prompt_feedback}")
+            if hasattr(response, 'candidates') and response.candidates:
+                 logging.error(f"Finish Reason: {getattr(response.candidates[0], 'finish_reason', 'N/A')}")
+                 logging.error(f"Safety Ratings: {getattr(response.candidates[0], 'safety_ratings', 'N/A')}")
 
-        if not response.candidates:
-             logging.error("Gemini response missing candidates.")
-             # Check for prompt feedback block reason
-             block_reason = getattr(response.prompt_feedback, 'block_reason', None)
-             if block_reason:
-                  logging.error(f"Analysis blocked by API: {block_reason}")
-                  return {"error": f"Analysis blocked due to: {block_reason}"}
-             return {"error": "Model returned no candidates in response."}
+            return {"error": "Model did not provide a final text analysis after function calls."}
 
-        candidate = response.candidates[0]
-
-        # Check finish reason
-        finish_reason = getattr(candidate, 'finish_reason', None)
-        if finish_reason and finish_reason != 1: # 1 = STOP (expected)
-            logging.warning(f"Gemini response finished with reason: {finish_reason}")
-            # Reasons: 0=UNSPECIFIED, 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
-            if finish_reason == 3: # Safety
-                 safety_ratings = getattr(candidate, 'safety_ratings', [])
-                 logging.error(f"Analysis stopped due to safety concerns: {safety_ratings}")
-                 return {"error": f"Analysis stopped by safety filter: {safety_ratings}"}
-            # Handle other reasons if necessary
-            return {"error": f"Analysis stopped unexpectedly (reason: {finish_reason})."}
-
-        if not candidate.content or not candidate.content.parts:
-            logging.error("Gemini response content or parts are missing.")
-            return {"error": "Model response is empty or malformed."}
-
-        # Expecting JSON in the first part due to response_mime_type
-        json_text = candidate.content.parts[0].text
-        analysis_result = json.loads(json_text) # This can raise JSONDecodeError
-
-        # Optional: Update the results database after successful analysis
-        try:
-            update_analysis_results(url, analysis_result)
-        except DatabaseError as db_err:
-            # Log the error but return the analysis result anyway
-            logging.error(f"Failed to store analysis result in DB (analysis still completed): {db_err}")
-
-        logging.info(f"Analysis successful for URL: {url}")
-        return analysis_result
-
-    except json.JSONDecodeError as e:
-        logging.error(f"Error decoding model's JSON response: {e}")
-        raw_text = "N/A"
-        try: # Try to get raw text for debugging
-            if response and response.candidates and candidate.content and candidate.content.parts:
-                raw_text = candidate.content.parts[0].text
-        except Exception: pass # Ignore errors getting raw text
-        logging.error(f"Raw model response text: {raw_text}")
-        return {"error": "Model did not return valid JSON output."}
-    except (ConfigurationError, DatabaseError, ApiError) as agent_err:
-         # Errors raised during tool execution or setup
-         logging.error(f"Agent error during analysis: {agent_err}")
-         return {"error": f"Analysis failed due to agent error: {agent_err}"}
+    except (ApiError, DatabaseError, ConfigurationError) as known_err:
+         # Errors raised by our tool functions during the SDK's automatic calling
+         logging.error(f"A tool function failed during analysis for URL '{url}': {known_err}")
+         return {"error": f"Analysis failed due to tool error: {known_err}"}
     except Exception as e:
-        logging.critical(f"An unexpected error occurred during analysis for URL '{url}': {e}")
-        logging.critical(traceback.format_exc()) # Log full traceback for unexpected errors
-        return {"error": f"An unexpected server error occurred during analysis."}
+        # Catch potential errors from chat.send_message or other unexpected issues
+        logging.critical(f"An unexpected error occurred during Gemini interaction for URL '{url}': {e}")
+        logging.critical(traceback.format_exc())
+        return {"error": f"An unexpected server error occurred during analysis interaction."}
 
 
 # --- Flask App Setup ---

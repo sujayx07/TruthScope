@@ -5,40 +5,26 @@ import json
 server_url = "http://localhost:5000/analyze"
 
 # Sample article for testing - using a BBC article about climate change
-demo_url = "https://www.bbc.com/news/science-environment-65621896"
+demo_url = "https://timesofindia.indiatimes.com/world/europe/massive-blackout-hits-spain-portugal-france-trains-flights-affected-millions-impacted/articleshow/120697350.cms"
 demo_article_text = """
-Climate change: Carbon 'surge' expected in 2023 as extreme heat hits soil
-By Matt McGrath
-Environment correspondent
+NEW DELHI: On the eve of Kolkata Knight Riders' crucial Indian Premier League match against Delhi Capitals at the Arun Jaitley Stadium, pacer Harshit Rana admitted on Monday that the defending champions deeply miss the presence of former mentor Gautam Gambhir in their dugout.
+Also visit: IPL Live Score
+Rana, who had a breakout IPL 2024 season under Gambhir's guidance — taking 19 wickets in KKR's title-winning run — revealed how much the 'Guru' meant to his development. Thanks to Gambhir's mentorship, Harshit has since made his India debut across all three formats and emerged as one of the country's brightest young pace prospects.
+Go Beyond The Boundary with our YouTube channel. SUBSCRIBE NOW!
+Asked if KKR missed Gambhir, Harshit said diplomatically: "I won't say that because the composition of our support staff is basically the same (from last year). (Abhishek) Nayar Bhai has also come back. Chandu Sir, (Dwayne) Bravo are all good. But yes, there is this thrill factor which I miss a little. I am not talking about anyone else."
+Who's that IPL player?
+Rana then added: "You also know that Gambhir has an aura, the way he comes and takes the team along. I was just talking about that."
+Poll
+Do you think KKR is missing Gautam Gambhir's mentorship this season?
+Maybe a littleNot sureNo, they have a strong support staffYes, definitely
+Abhishek Nayar, who returned to KKR's coaching group after a stint with the Indian team, is seen by Rana as a major positive. "There will be a lot of changes now that he (Nayar) has come back. He is a very smart mind and reads situations very well," Rana said.
+With just seven points so far this season, KKR are struggling at seventh in the table, and Rana's candid comments reflect a side trying to rediscover the magic touch that once propelled them to glory.
+author
+About the Author
+TOI Sports Desk
+The TOI Sports Desk excels in a myriad of roles that capture the essence of live sporting events and deliver compelling content to readers worldwide. From running live blogs for India and non-India cricket matches to global spectacles featuring Indian talents, like the Chess World Cup final featuring Praggnanandhaa and the Badminton World Championships semifinal featuring HS Prannoy, our live coverage extends to all mega sporting events. We extensively cover events like the Olympics, Asian Games, Cricket World Cups, FIFA World Cups, and more. The desk is also adept at writing comprehensive match reports and insightful post-match commentary, complemented by stats-based articles that provide an in-depth analysis of player performances and team dynamics. We track news wires for key stories, conduct exclusive player interviews in both text and video formats, and file content from print editions and reporters. We keep track of all viral stories, trending topics and produce our own copies on the subjects. We deliver accurate, engaging, and up-to-the-minute sports content, round the clock.Read More
 
-Rising temperatures will cause soils to release more carbon dioxide this year, giving a "turbo boost" to global warming, scientists say.
 
-The impact of this carbon "surge" will be equivalent to the annual emissions of Japan, the world's fifth largest polluter.
-
-The situation is likely to be so bad that it would cancel out any rise in carbon uptake by trees and plants, researchers believe.
-
-This would put greater pressure on society to curb fossil fuel use.
-
-Soil is one of the great unknowns in our understanding of future climate change. Earth's soil holds around double the amount of carbon found in the atmosphere.
-
-As temperatures rise, the microbes in the soil become more active and release more CO2 through respiration.
-Evidence suggests that this effect increases until temperatures hit around 25C, before declining.
-
-Until now, many scientists believed that the negative impact of soils would be balanced out by the positive impact of plants, which absorb more CO2 when temperatures are higher.
-
-But this new study suggests that in the warming world, in 2023, this balancing act is no more.
-
-Last year was one of the warmest on record and the trend is continuing this year with April setting a new global record.
-
-"What we've seen is that this soil-carbon feedback is sitting in the background affecting the climate, and now the climate is warming enough that it's really expressing itself," lead author Dr Chris Huntingford, from the UK Centre for Ecology and Hydrology (UKCEH), told BBC News.
-
-"And we think this year could be particularly extreme."
-
-According to the analysis, in 2023 these soil carbon losses may well become larger than carbon gains elsewhere, especially in plants.
-
-The researchers used data on soil temperatures and changes in CO2 concentrations to build a mathematical model to predict changes in soil carbon.
-
-They found that in the early 1990s, the soil carbon response to warming was low. But they saw that in the hot years 2015-2016, and again in 2021-2022, there was a surge in the amount of CO2 given off.
 """
 
 # Prepare the request payload
