@@ -1,11 +1,4 @@
-flask==3.0.0
-flask-cors==4.0.0
-requests==2.31.0
-python-dotenv==1.0.0
-transformers==4.36.2
-newsapi-python==0.2.7
---find-links https://download.pytorch.org/whl/torch_stable.html
-torch==2.2.1+cpu
-torchvision==0.17.1+cpu
-torchaudio==2.2.1+cpu
-numpy>=1.24.0 
+google-generativeai
+psycopg2-binary
+requests
+python-dotenv

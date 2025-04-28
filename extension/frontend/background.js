@@ -129,7 +129,7 @@ const TEST_MODE = true;
 const SAMPLE_TO_USE = 'fakeSample'; // Change this to test different scenarios
 
 // Define backend endpoints
-const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/check"; // Your text analysis backend
+const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/check_text"; // Your text analysis backend
 const MEDIA_ANALYSIS_URL = "http://127.0.0.1:5000/check_media"; // Your separate media analysis backend
 
 // Keep track of active connections and processing state per tab
