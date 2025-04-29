@@ -65,7 +65,7 @@ def get_news(query, category):
             q=query,
             category=category,
             language="en",
-            country="us",
+            country="in",
             page_size=5  # Limit results
         )
 
