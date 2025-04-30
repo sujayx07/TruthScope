@@ -1,9 +1,9 @@
 // Define backend endpoints
 const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/analyze";
 // const MEDIA_ANALYSIS_URL = "http://127.0.0.1:5000/analyze_media"; // Old combined endpoint
-const IMAGE_ANALYSIS_URL = "http://127.0.0.1:6000/analyze_image"; // New image endpoint
-const VIDEO_ANALYSIS_URL = "http://127.0.0.1:6000/analyze_video"; // New video endpoint
-const AUDIO_ANALYSIS_URL = "http://127.0.0.1:6000/analyze_audio"; // New audio endpoint
+const IMAGE_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_image"; // New image endpoint
+const VIDEO_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_video"; // New video endpoint
+const AUDIO_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_audio"; // New audio endpoint
 
 // Keep track of active connections and processing state per tab
 let activeConnections = new Set();
@@ -183,6 +183,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       // --- End endpoint determination ---
 
+      console.log(`[Tab ${tabId}] Attempting to fetch media analysis from: ${targetUrl}`); // <-- Add log
+
       fetch(targetUrl, { // <-- Use the determined targetUrl
           method: "POST",
           headers: {
@@ -235,7 +237,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => {
           // error might be a network error (Error object) or the object thrown above
           const errorMessage = error.message || "Unknown analysis error";
-          console.error(`[Tab ${tabId}] ❌ Error during media item analysis fetch for ${mediaUrl}:`, error);
+          // <-- Log the full error object for more details -->
+          console.error(`[Tab ${tabId}] ❌ Error during media item analysis fetch for ${mediaUrl}. Full Error:`, error);
 
           // <<< Send error back to content script for display >>>
           chrome.tabs.sendMessage(tabId, {
