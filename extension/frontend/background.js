@@ -1,14 +1,9 @@
 // Define backend endpoints
-<<<<<<< Updated upstream
 const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/analyze";
 // const MEDIA_ANALYSIS_URL = "http://127.0.0.1:5000/analyze_media"; // Old combined endpoint
 const IMAGE_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_image"; // New image endpoint
 const VIDEO_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_video"; // New video endpoint
 const AUDIO_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_audio"; // New audio endpoint
-=======
-const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/analyze"; // Updated URL for Flask backend
-// const MEDIA_ANALYSIS_URL = "http://127.0.0.1:5000/check_everymedia"; // Commented out - Not implemented in current backend
->>>>>>> Stashed changes
 
 // Keep track of active connections and processing state per tab
 let activeConnections = new Set();
