@@ -21,6 +21,30 @@ def extract_text_from_image(image_url):
     response = requests.get(api_url, params=payload)
     return response.json()
 
+def analyze_image_v2(url):
+    """Analyze an image for manipulations and return results in the required format."""
+    ocr_result = extract_text_from_image(url)
+    manipulation_result = analyze_image(url)
+
+    parsed_text = ocr_result.get("ParsedResults", [{}])[0].get("ParsedText", "")
+    ai_generated = manipulation_result.get("type", {}).get("ai_generated", 0.0)
+
+    result = {
+        "images_analyzed": 1,
+        "manipulated_images_found": 0 if ai_generated < 0.5 else 1,
+        "manipulation_confidence": ai_generated,
+        "manipulated_media": [
+            {
+                "url": url,
+                "type": "image",
+                "ParsedText": parsed_text,
+                "ai_generated": ai_generated
+            }
+        ]
+    }
+
+    return result
+
 def analyze_media(media_list):
     """Analyze a list of media (images only)."""
     mediaResult = {
@@ -61,10 +85,12 @@ def analyze_media(media_list):
 def main():
     media_list = [
         {"type": "image", "url": "https://www.slidecow.com/wp-content/uploads/2018/04/Setting-Up-The-Slide-Text.jpg"},
-        {"type": "image", "url": "https://example.com/image2.jpg"}
     ]
 
-    analyze_media(media_list)
+    for media in media_list:
+        if media["type"] == "image":
+            result = analyze_image_v2(media["url"])
+            print(json.dumps(result, indent=4))
 
 if __name__ == "__main__":
     main()

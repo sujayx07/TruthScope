@@ -1,0 +1,13 @@
+{
+    "images_analyzed": 1,
+    "manipulated_images_found": 0,
+    "manipulation_confidence": 0.12,
+    "manipulated_media": [
+        {
+            "url": "https://www.slidecow.com/wp-content/uploads/2018/04/Setting-Up-The-Slide-Text.jpg",
+            "type": "image",
+            "ParsedText": "SMILE\r\n",
+            "ai_generated": 0.12
+        }
+    ]
+}
