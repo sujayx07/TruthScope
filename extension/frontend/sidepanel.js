@@ -9,14 +9,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const confidenceDiv = document.getElementById('confidence');
     const factCheckResultsContainer = document.getElementById('factCheckResults');
     const newsResultsContainer = document.getElementById('newsResults');
-    const mediaAnalysisContainer = document.getElementById('mediaAnalysisResults');
     const aiSummaryContainer = document.getElementById('aiSummary');
     const themeToggleButton = document.getElementById('themeToggleButton');
 
     // Check if essential elements exist
-    if (!statusBadge || !confidenceDiv || !factCheckResultsContainer || 
-        !newsResultsContainer || !themeToggleButton || 
-        !mediaAnalysisContainer || !aiSummaryContainer) {
+    if (!statusBadge || !confidenceDiv || !factCheckResultsContainer ||
+        !newsResultsContainer || !themeToggleButton ||
+        !aiSummaryContainer) {
         console.error("TruthScope Sidepanel Error: One or more essential UI elements are missing.");
         document.body.innerHTML = '<div class="p-4 text-red-600">Error: Sidepanel UI failed to load correctly. Please try reloading the extension.</div>';
         return;
@@ -282,69 +281,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
-     * Creates a readable presentation of media analysis results
-     * @param {object} mediaResult - The media analysis results
-     * @returns {string} HTML representation of the media analysis
-     */
-    function formatMediaAnalysisHTML(mediaResult) {
-        if (!mediaResult) {
-            return '<div class="text-gray-500 p-4">No media analysis available.</div>';
-        }
-        
-        if (mediaResult.error) {
-            return `<div class="text-red-500 p-4">Media Analysis Error: ${mediaResult.error}</div>`;
-        }
-        
-        let html = `
-            <div class="p-4">
-                <div class="mb-4">
-                    <span class="font-semibold">Images analyzed:</span> ${mediaResult.images_analyzed || 0}
-                </div>
-                <div class="mb-4">
-                    <span class="font-semibold">Videos analyzed:</span> ${mediaResult.videos_analyzed || 0}
-                </div>
-                <div class="mb-4">
-                    <span class="font-semibold">Manipulated images found:</span> ${mediaResult.manipulated_images_found || 0}
-                </div>
-        `;
-        
-        // Show confidence if available
-        if (mediaResult.manipulation_confidence !== undefined) {
-            const confidencePercent = (mediaResult.manipulation_confidence * 100).toFixed(1);
-            html += `
-                <div class="mb-4">
-                    <span class="font-semibold">Manipulation confidence:</span> ${confidencePercent}%
-                </div>
-            `;
-        }
-        
-        // List manipulated media if available
-        if (mediaResult.manipulated_media && mediaResult.manipulated_media.length > 0) {
-            html += '<div class="mt-4 mb-2 font-semibold">Detected manipulated media:</div>';
-            html += '<div class="space-y-3">';
-            
-            mediaResult.manipulated_media.forEach(item => {
-                const confidencePercent = (item.confidence * 100).toFixed(1);
-                html += `
-                    <div class="p-3 border rounded-lg">
-                        <div class="mb-1"><span class="font-semibold">Type:</span> ${item.type}</div>
-                        <div class="mb-1"><span class="font-semibold">Issue:</span> ${item.manipulation_type.replace(/_/g, ' ')}</div>
-                        <div class="mb-1"><span class="font-semibold">Confidence:</span> ${confidencePercent}%</div>
-                        <div class="text-xs text-gray-600 dark:text-gray-400 break-all">${item.url}</div>
-                    </div>
-                `;
-            });
-            
-            html += '</div>';
-        } else {
-            html += '<div class="text-green-600 dark:text-green-400 p-2">No manipulated media detected.</div>';
-        }
-        
-        html += '</div>';
-        return html;
-    }
-
-    /**
      * Displays the full analysis result, including status, credibility, AI reasoning, fact-checks, and media results.
      * @param {object | null} data - The analysis result object from background.js, or null if unavailable.
      */
@@ -352,7 +288,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Clear all containers first
         aiSummaryContainer.innerHTML = '';
         factCheckResultsContainer.innerHTML = '';
-        mediaAnalysisContainer.innerHTML = '';
         newsResultsContainer.innerHTML = '';
 
         if (!data || (!data.textResult && !data.mediaResult)) {
@@ -360,10 +295,9 @@ document.addEventListener('DOMContentLoaded', function() {
             statusBadge.textContent = "Unavailable";
             statusBadge.className = "status-badge unknown";
             confidenceDiv.textContent = "Analysis could not be performed or is not available for this page.";
-            
+
             aiSummaryContainer.innerHTML = '<div class="text-gray-500 p-4">No data available to generate reasoning.</div>';
             factCheckResultsContainer.innerHTML = '<div class="text-gray-500 p-4">No fact-check sources available.</div>';
-            mediaAnalysisContainer.innerHTML = '<div class="text-gray-500 p-4">No media analysis available.</div>';
             newsResultsContainer.innerHTML = '<div class="text-gray-500 p-4">No related news available.</div>';
             return;
         }
@@ -406,13 +340,6 @@ document.addEventListener('DOMContentLoaded', function() {
             aiSummaryContainer.innerHTML = '<div class="text-gray-500 p-4">Waiting for text analysis to generate reasoning.</div>';
         }
 
-        // Display Media Analysis Result in its own container
-        if (data.mediaResult) {
-            mediaAnalysisContainer.innerHTML = formatMediaAnalysisHTML(data.mediaResult);
-        } else {
-            mediaAnalysisContainer.innerHTML = '<div class="text-gray-500 p-4">Media analysis pending or not available.</div>';
-        }
-        
         // Display Related News (empty placeholder for now, ready for future integration)
         newsResultsContainer.innerHTML = '<div class="text-gray-500 p-4">No related news articles available at this time.</div>';
     }
@@ -429,7 +356,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 aiSummaryContainer.innerHTML = createLoadingPlaceholderHTML('Generating AI reasoning...');
                 factCheckResultsContainer.innerHTML = createLoadingPlaceholderHTML('Loading fact check results...');
-                mediaAnalysisContainer.innerHTML = createLoadingPlaceholderHTML('Analyzing media content...');
                 newsResultsContainer.innerHTML = createLoadingPlaceholderHTML('Searching for related news...');
 
                 // Request data from background script
@@ -466,13 +392,12 @@ document.addEventListener('DOMContentLoaded', function() {
         statusBadge.textContent = "Error";
         statusBadge.className = "status-badge unknown";
         confidenceDiv.textContent = message;
-        
+
         aiSummaryContainer.innerHTML = '<div class="text-red-500 p-4">Error generating reasoning.</div>';
         factCheckResultsContainer.innerHTML = '<div class="text-red-500 p-4">Error retrieving results.</div>';
-        mediaAnalysisContainer.innerHTML = '<div class="text-red-500 p-4">Error retrieving results.</div>';
         newsResultsContainer.innerHTML = '<div class="text-red-500 p-4">Error retrieving results.</div>';
     }
-    
+
     /**
      * Displays not available state in the UI when no analysis is available
      */
@@ -480,17 +405,16 @@ document.addEventListener('DOMContentLoaded', function() {
         statusBadge.textContent = "Unavailable";
         statusBadge.className = "status-badge unknown";
         confidenceDiv.textContent = "Analysis not yet complete or page not supported.";
-        
+
         aiSummaryContainer.innerHTML = '<div class="text-gray-500 p-4">No data available to generate reasoning.</div>';
         factCheckResultsContainer.innerHTML = '<div class="text-gray-500 p-4">No analysis results available yet.</div>';
-        mediaAnalysisContainer.innerHTML = '<div class="text-gray-500 p-4">No analysis results available yet.</div>';
         newsResultsContainer.innerHTML = '<div class="text-gray-500 p-4">No analysis results available yet.</div>';
     }
 
     // Listen for real-time updates from background script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Listen for analysis update notifications
-        if ((message.action === "analysisComplete" || message.action === "mediaAnalysisComplete")) {
+        if ((message.action === "analysisComplete" || message.action === "mediaAnalysisItemComplete")) {
             chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
                 const currentTab = tabs[0];
                 // Only update if the message is for the currently active tab or if no specific tab is mentioned

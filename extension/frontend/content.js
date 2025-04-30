@@ -116,32 +116,6 @@ async function sendTextData(url, content) {
   }
 }
 
-// Function to send media sources for analysis
-async function sendMediaData(url, mediaSources) {
-    if (mediaSources.imageSources.length === 0 && mediaSources.videoSources.length === 0) {
-        console.log("No media found, skipping media analysis.");
-        return;
-    }
-    try {
-        console.log("Sending media data for analysis:", mediaSources);
-        await ensureBackgroundScriptReady();
-
-        await safeSendMessage({
-            action: "processMedia", // New action name
-            data: {
-                url: url,
-                imageSources: mediaSources.imageSources,
-                videoSources: mediaSources.videoSources
-            }
-        });
-        console.log("Media data sent successfully.");
-    } catch (error) {
-        console.error('Error sending media data:', error);
-        // Handle error appropriately
-    }
-}
-
-
 // Function to apply highlights to the page
 // Basic implementation using find and replace - might be fragile.
 // Consider using a library like Mark.js for robustness.
@@ -233,9 +207,194 @@ function isArticlePage() {
   }
 }
 
+// --- Start of Media Analysis Button Injection ---
+
+// Inject CSS for buttons and result boxes
+function injectStyles() {
+    const style = document.createElement('style');
+    // Use backticks directly for template literal
+    style.textContent = `
+        .truthscope-media-container {
+            position: relative;
+            display: inline-block; /* Adjust as needed */
+        }
+        .truthscope-analyze-button {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            z-index: 9999;
+            padding: 3px 6px;
+            font-size: 10px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        .truthscope-analyze-button:hover {
+            opacity: 1;
+        }
+        .truthscope-analysis-result {
+            position: absolute;
+            bottom: 5px; /* Position relative to container */
+            left: 5px;
+            z-index: 9998;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 5px;
+            font-size: 12px;
+            color: #333;
+            max-width: calc(100% - 10px); /* Prevent overflow */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// Store analysis results temporarily
+const analysisResults = {}; // Key: mediaId, Value: resultText
+const mediaElementMap = {}; // Key: mediaId, Value: buttonElement
+
+// Function to inject analysis button
+let mediaCounter = 0;
+function injectAnalysisButton(mediaElement) {
+    const mediaType = mediaElement.tagName.toLowerCase(); // 'img', 'video', 'audio'
+    let mediaSrc = mediaElement.src;
+
+    // Extract source for video/audio if direct src is not set
+    if ((mediaType === 'video' || mediaType === 'audio') && !mediaSrc) {
+        const sourceElement = mediaElement.querySelector('source');
+        if (sourceElement) {
+            mediaSrc = sourceElement.src;
+        }
+    }
+
+    if (!mediaSrc) {
+        // Try getting currentSrc for elements where src might not be initially set
+        mediaSrc = mediaElement.currentSrc;
+        if (!mediaSrc) {
+            console.log('Skipping media element without valid src/currentSrc:', mediaElement);
+            return; // Skip elements without a source
+        }
+    }
+
+    // Ensure the element has a unique ID for referencing
+    const mediaId = `truthscope-media-${mediaCounter++}`;
+    mediaElement.dataset.truthscopeId = mediaId; // Add data attribute
+
+    // Create a wrapper for positioning if needed (simple check)
+    let container = mediaElement.parentElement;
+    if (getComputedStyle(container).position === 'static') {
+         // Check if parent is already a container or if we need a new one
+        if (!container.classList.contains('truthscope-media-container')) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('truthscope-media-container');
+            mediaElement.parentNode.insertBefore(wrapper, mediaElement);
+            wrapper.appendChild(mediaElement);
+            container = wrapper;
+        }
+    } else {
+         // Parent is already positioned, add class if not present
+         if (!container.classList.contains('truthscope-media-container')) {
+             container.classList.add('truthscope-media-container');
+         }
+    }
+
+
+    const button = document.createElement('button');
+    button.textContent = 'Analyze';
+    button.classList.add('truthscope-analyze-button');
+    button.dataset.mediaId = mediaId; // Link button to media element
+
+    button.addEventListener('click', async (event) => {
+        event.stopPropagation(); // Prevent triggering video play/pause etc.
+        event.preventDefault();
+        console.log(`Analyze button clicked for ${mediaType}: ${mediaSrc}`);
+        button.textContent = 'Analyzing...'; // Provide feedback
+        button.disabled = true;
+
+        try {
+            await ensureBackgroundScriptReady();
+            // Use 'processMediaItem' action to match background.js handler
+            // Send mediaId along with other data
+            await safeSendMessage({
+                action: "processMediaItem",
+                data: {
+                    mediaUrl: mediaSrc, // Match expected key in background.js
+                    mediaType: mediaType,
+                    mediaId: mediaId // Send ID to background
+                }
+            });
+            // Result will be displayed via message listener 'displayMediaAnalysis'
+            // The simple response from background.js isn't used here for display
+        } catch (error) {
+            console.error('Error sending media analysis request:', error);
+            // Display error locally if sending fails
+            displayAnalysisResult(mediaId, `Error sending request: ${error.message || 'Unknown error'}`);
+            // Button state is reset within displayAnalysisResult
+        }
+    });
+
+    // Append button to the container (which now wraps the media element)
+    container.appendChild(button);
+    mediaElementMap[mediaId] = button; // Store button reference
+}
+
+// Function to display analysis result
+function displayAnalysisResult(mediaId, resultText) {
+    const button = mediaElementMap[mediaId];
+    if (!button || !button.parentElement) {
+        console.error(`Could not find container for mediaId: ${mediaId}`);
+        return;
+    }
+
+    // Remove existing result if any
+    const existingResult = button.parentElement.querySelector(`.truthscope-analysis-result[data-media-id="${mediaId}"]`);
+    if (existingResult) {
+        existingResult.remove();
+    }
+
+    const resultDiv = document.createElement('div');
+    resultDiv.classList.add('truthscope-analysis-result');
+    resultDiv.dataset.mediaId = mediaId; // Link result to media element
+    // <<< Directly display the received text (summary or error) >>>
+    resultDiv.textContent = resultText;
+
+    // Append result to the same container as the button
+    button.parentElement.appendChild(resultDiv);
+
+    // Reset button state
+    button.textContent = 'Analyze';
+    button.disabled = false;
+}
+
+// Function to find and add buttons to media elements
+function addAnalysisButtonsToMedia() {
+    console.log("Searching for media elements to add buttons...");
+    const mediaElements = document.querySelectorAll('img, video, audio');
+    mediaElements.forEach(el => {
+        // Basic filtering: avoid tiny icons, ensure visibility?
+        if (el.offsetWidth > 50 && el.offsetHeight > 50 || el.tagName.toLowerCase() === 'audio') { // Example filter
+             // Check if button already exists
+            const mediaId = el.dataset.truthscopeId;
+            if (!mediaId || !mediaElementMap[mediaId]) {
+                injectAnalysisButton(el);
+            }
+        }
+    });
+    console.log(`Found ${mediaElements.length} media elements, added buttons where applicable.`);
+}
+
+// --- End of Media Analysis Button Injection ---
+
 // Main initialization
 async function init() {
   try {
+    injectStyles(); // Inject CSS styles first
+
     if (!isArticlePage()) {
         console.log("Not an article page, skipping analysis.");
         return;
@@ -249,8 +408,42 @@ async function init() {
         // Send text and media data in parallel
         await Promise.all([
             sendTextData(url, content),
-            sendMediaData(url, mediaSources)
+            // sendMediaData(url, mediaSources) // Commented out call
         ]);
+
+        // Inject buttons after initial processing
+        addAnalysisButtonsToMedia();
+
+        // Use MutationObserver to detect dynamically added media
+        const observer = new MutationObserver((mutationsList) => {
+            for(const mutation of mutationsList) {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            // Check if the added node itself is media
+                            if (['IMG', 'VIDEO', 'AUDIO'].includes(node.tagName)) {
+                                if (node.offsetWidth > 50 && node.offsetHeight > 50 || node.tagName === 'AUDIO') {
+                                     if (!node.dataset.truthscopeId) { // Check if not already processed
+                                        injectAnalysisButton(node);
+                                    }
+                                }
+                            }
+                            // Check if the added node contains media elements
+                            node.querySelectorAll('img, video, audio').forEach(el => {
+                                if (el.offsetWidth > 50 && el.offsetHeight > 50 || el.tagName === 'AUDIO') {
+                                     if (!el.dataset.truthscopeId) { // Check if not already processed
+                                        injectAnalysisButton(el);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                }
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+
     };
 
     if (document.readyState === 'complete') {
@@ -285,13 +478,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.error("Invalid highlight data received:", message.highlights);
             sendResponse({ status: "error", error: "Invalid highlight data" });
         }
-        return true; // Indicate async response potentially (though applyHighlights is sync here)
+        return true; // Indicate async response potentially
     }
+
+    // --- Handle Media Analysis Result ---
+    if (message.action === "displayMediaAnalysis") {
+        // <<< Expect summary or error directly >>>
+        const { mediaId, summary, error } = message.data;
+
+        if (mediaId) {
+            if (error) {
+                console.error(`Analysis error for ${mediaId}: ${error}`);
+                displayAnalysisResult(mediaId, `Error: ${error}`);
+            } else if (summary !== undefined) { // Check if summary exists (could be empty string)
+                console.log(`Displaying analysis summary for ${mediaId}:`, summary);
+                displayAnalysisResult(mediaId, summary);
+            } else {
+                console.warn(`Received displayMediaAnalysis for ${mediaId} without summary or error.`);
+                displayAnalysisResult(mediaId, "Received empty response.");
+            }
+            sendResponse({ status: "result processed" });
+        } else {
+            console.error("Invalid media analysis result data (missing mediaId):", message.data);
+            sendResponse({ status: "error", error: "Invalid result data (missing mediaId)" });
+        }
+        return true; // Indicate async response potentially
+    }
+    // --- End Handle Media Analysis Result ---
+
+    // --- Handle Text Analysis Error ---
+    if (message.action === "analysisError") {
+        // This specifically catches errors sent from the background script
+        // (e.g., during text analysis fetch failure)
+        console.error("Received analysis error from background script:", message.error);
+        // Optionally, display a generic error message on the page?
+        // e.g., showTemporaryMessage(`Analysis Error: ${message.error}`);
+        sendResponse({ status: "error processed" });
+        return true; // Indicate async response potentially
+    }
+    // --- End Handle Text Analysis Error ---
+
 
   } catch (error) {
     console.error('Error handling message:', error);
     // Ensure response is sent even in case of unexpected errors
-    if (!sendResponse._called) {
+    if (sendResponse && typeof sendResponse === 'function' && !sendResponse._called) { // Basic check if sendResponse is valid and not called
         try {
             sendResponse({ status: "error", error: error.message });
         } catch (e) {
@@ -301,23 +532,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open
   }
   // Return false or undefined for synchronous messages if no longer waiting
-  // return false;
-});
-
-// Ensure sendResponse is always eventually called for async listeners
-// This is tricky, the 'return true' pattern is key.
-// Adding a safeguard in case logic paths miss it.
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // ... existing listener logic ...
-
-    // If after processing, sendResponse hasn't been called, call it now.
-    // This is a fallback, ideally logic paths should call sendResponse.
-    // setTimeout(() => {
-    //     if (!sendResponse._called) { // Check a flag if you set one
-    //         console.log("Message listener timeout, sending default response for action:", message.action);
-    //         // sendResponse({ status: "processed" }); // Or appropriate default
-    //     }
-    // }, 0); // Check immediately after sync execution
-
-    return true; // Crucial for async operations within the listener
+  // return false; // Removed the duplicate listener below
 });
