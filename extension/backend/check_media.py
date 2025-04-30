@@ -85,11 +85,5 @@ if __name__ == "__main__":
     # Use debug=True for development (enables auto-reloading, detailed errors)
     # Set debug=False for production environments
     media_bp.run(host='0.0.0.0', port=3000, debug=True) # Ensure debug is True for auto-reload
-
-    # Cleanup code (like closing DB pool) might need adjustment
-    # depending on the WSGI server and deployment strategy.
-    # For the dev server, this might run on Ctrl+C, but it's not guaranteed.
-    # Consider using Flask's @app.teardown_appcontext for cleanup per request
-    # or signal handling for graceful shutdown in production.
     logging.info("Flask server stopping...")
     logging.info("Script finished.")

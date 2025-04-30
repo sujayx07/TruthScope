@@ -196,6 +196,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .then(async response => {
           console.log(`[Tab ${tabId}] Media Item Analysis API Response Status (${mediaUrl}):`, response.status);
+
+          // Log response headers
+          console.log(`[Tab ${tabId}] Media Response Headers:`);
+          response.headers.forEach((value, name) => {
+              console.log(`  ${name}: ${value}`);
+          });
+
           if (!response.ok) {
               const errorText = await response.text();
               let errorDetail = errorText;
@@ -206,7 +213,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               // Throw an object containing the status and detail for the catch block
               throw { status: response.status, message: `HTTP ${response.status}: ${errorDetail}` };
           }
-          return response.json();
+
+          // Try reading as text first
+          const responseText = await response.text();
+          console.log(`[Tab ${tabId}] Media Response Text:`, responseText);
+
+          // Now try parsing the text as JSON
+          const result = JSON.parse(responseText);
+          return result; // Pass the parsed result to the next .then()
       })
       .then(result => {
           console.log(`[Tab ${tabId}] Media item analysis result for ${mediaUrl}:`, result);
