@@ -17,12 +17,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const signInButton = document.getElementById('signInButton');
     const userInfoDiv = document.getElementById('userInfo');
     const userAvatar = document.getElementById('userAvatar');
-    const signOutButton = document.getElementById('signOutButton');
 
     // Check if essential elements exist
     if (!statusBadge || !confidenceDiv || !factCheckResultsContainer ||
         !newsResultsContainer || !themeToggleButton || !aiSummaryContainer ||
-        !authContainer || !signInButton || !userInfoDiv || !userAvatar || !signOutButton) {
+        !authContainer || !signInButton || !userInfoDiv || !userAvatar) {
         console.error("TruthScope Sidepanel Error: One or more essential UI elements are missing.");
         const errorContainer = document.querySelector('.max-w-4xl.mx-auto') || document.body;
         errorContainer.innerHTML = '<div class="p-4 text-red-600 dark:text-red-400">Error: Sidepanel UI failed to load correctly. Please try reloading the extension or contact support.</div>';
@@ -47,7 +46,7 @@ document.addEventListener('DOMContentLoaded', function() {
             userAvatar.alt = currentUserProfile.email || 'User Avatar';
             userAvatar.title = currentUserProfile.email || 'User Profile';
             signInButton.disabled = false; // Ensure sign-in button is usable if shown later
-            signInButton.textContent = "Sign in with Google";
+            signInButton.textContent = "Sign in";
         } else {
             signInButton.classList.remove('hidden');
             userInfoDiv.classList.add('hidden');
@@ -56,7 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
             userAvatar.alt = 'User Avatar';
             userAvatar.title = 'Sign in required';
             signInButton.disabled = false;
-            signInButton.textContent = "Sign in with Google";
+            signInButton.textContent = "Sign in";
             // Clear results and show sign-in prompt if not signed in
             clearResultsDisplay();
             displaySignInRequiredState();
@@ -87,7 +86,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error("Sidepanel: Error sending signIn message or processing response:", error);
             signInButton.disabled = false;
-            signInButton.textContent = "Sign in with Google";
+            signInButton.textContent = "Sign in";
             displayErrorState(`Sign-in error: ${error.message}. Please ensure the extension is active.`);
             isSignedIn = false;
             currentUserProfile = null;
@@ -99,17 +98,13 @@ document.addEventListener('DOMContentLoaded', function() {
      * Handles the sign-out button click by sending a message to the background script.
      */
     async function handleSignOutClick() {
-        console.log("Sidepanel: Sign-out button clicked, sending message to background.");
-        signOutButton.disabled = true;
+        console.log("Sidepanel: Sign-out initiated via avatar, sending message to background.");
         try {
             await chrome.runtime.sendMessage({ action: "signOut" });
             console.log("Sidepanel: signOut message sent.");
         } catch (error) {
             console.error("Sidepanel: Error sending signOut message:", error);
-            signOutButton.disabled = false;
             displayErrorState(`Sign-out error: ${error.message}`);
-        } finally {
-            signOutButton.disabled = false;
         }
     }
 
@@ -511,15 +506,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add event listeners for auth buttons
     if (signInButton) {
         signInButton.addEventListener('click', handleSignInClick);
-        console.log("Sidepanel: Sign-in button listener attached."); // Add log
+        console.log("Sidepanel: Sign-in button listener attached.");
     } else {
         console.error("Sidepanel: signInButton element not found, cannot attach listener.");
     }
-    if (signOutButton) {
-        signOutButton.addEventListener('click', handleSignOutClick);
-        console.log("Sidepanel: Sign-out button listener attached."); // Add log
+
+    // Add listener to the user avatar for sign-out confirmation
+    if (userAvatar) {
+        userAvatar.addEventListener('click', () => {
+            // Only show confirmation if the user is actually signed in
+            if (isSignedIn) {
+                if (confirm("Are you sure you want to sign out?")) {
+                    handleSignOutClick(); // Proceed with sign out if confirmed
+                }
+            }
+        });
+        console.log("Sidepanel: User avatar sign-out confirmation listener attached.");
     } else {
-        console.error("Sidepanel: signOutButton element not found, cannot attach listener.");
+        console.error("Sidepanel: userAvatar element not found, cannot attach listener.");
     }
 
     // Listen for messages from background script
