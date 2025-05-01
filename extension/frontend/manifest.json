@@ -9,7 +9,8 @@
     "notifications",
     "sidePanel",
     "scripting",
-    "tabs"
+    "tabs",
+    "identity"
   ],
   "background": {
     "service_worker": "background.js"
@@ -35,6 +36,23 @@
   },
   "host_permissions": [
     "http://127.0.0.1:5000/*",
-    "http://127.0.0.1:3000/*"
+    "http://127.0.0.1:3000/*",
+    "https://www.googleapis.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "oauth2": {
+    "client_id": "195457654977-nsal93rm38e4enig8upkkt5s9f3k5cec.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icon16.png"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }

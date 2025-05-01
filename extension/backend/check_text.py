@@ -39,6 +39,8 @@ DB_POOL_MIN_CONN = 1
 DB_POOL_MAX_CONN = 5
 URL_VERDICTS_TABLE = "url_verdicts"
 ANALYSIS_RESULTS_TABLE = "analysis_results"
+USERS_TABLE = "users" # <-- NEW TABLE NAME
+DEFAULT_USER_TIER = "free" # <-- NEW DEFAULT TIER
 VERDICT_REAL = "real"
 VERDICT_FAKE = "fake"
 VERDICT_NOT_FOUND = "not_found"
@@ -163,6 +165,65 @@ def extract_domain_from_url(url: str) -> Optional[str]:
         logging.warning(f"Error parsing URL '{url}': {e}")
         return None
 
+def get_or_create_user(google_id: str) -> Dict[str, Any]:
+    """
+    Retrieves user details (id, tier) from the database based on Google ID.
+    If the user doesn't exist, creates a new user with the default tier.
+
+    Args:
+        google_id: The user's unique Google ID ('sub').
+
+    Returns:
+        A dictionary containing the user's internal ID and tier.
+
+    Raises:
+        DatabaseError: If database operations fail.
+        ValueError: If google_id is empty.
+    """
+    logging.debug(f"Getting or creating user for google_id: {google_id}")
+    if not google_id: # Add check for missing ID
+        logging.error("Attempted to get/create user with empty google_id.")
+        raise ValueError("Google User ID cannot be empty.")
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn, conn.cursor() as cursor:
+            cursor.execute(f"SELECT id, tier FROM {USERS_TABLE} WHERE google_id = %s", (google_id,))
+            user_record = cursor.fetchone()
+
+            if user_record:
+                user_id, tier = user_record
+                logging.info(f"Found existing user (ID: {user_id}, Tier: {tier}) for google_id: {google_id}")
+                return {"id": user_id, "tier": tier}
+            else:
+                # If creating, email might be desirable but not strictly required if google_id is unique
+                logging.info(f"Creating new user for google_id: {google_id}")
+                cursor.execute(
+                    f"""
+                    INSERT INTO {USERS_TABLE} (google_id, email, tier, created_at)
+                    VALUES (%s, %s, %s, NOW())
+                    RETURNING id, tier;
+                    """,
+                    # Pass None for email if not available/required by DB schema
+                    (google_id, None, DEFAULT_USER_TIER)
+                )
+                new_user_record = cursor.fetchone()
+                if new_user_record:
+                    user_id, tier = new_user_record
+                    logging.info(f"Created new user (ID: {user_id}, Tier: {tier})")
+                    return {"id": user_id, "tier": tier}
+                else:
+                    raise DatabaseError("Failed to retrieve new user details after insertion.")
+    except (psycopg2.Error, DatabaseError, ValueError) as e: # Added ValueError
+        logging.error(f"Database error getting/creating user for google_id {google_id}: {e}")
+        # Reraise as DatabaseError for consistent handling upstream, unless it was ValueError
+        if isinstance(e, ValueError):
+            raise e
+        raise DatabaseError(f"DB error accessing user data: {e}")
+    finally:
+        if conn:
+            release_db_connection(conn)
+
 # --- Agent Tool Functions ---
 
 def check_database_for_url(url: str) -> str:
@@ -194,7 +255,6 @@ def check_database_for_url(url: str) -> str:
         return verdict
     except (psycopg2.Error, DatabaseError) as e:
         logging.error(f"Database error checking URL '{url}' (domain: {domain}): {e}")
-        # Don't return error string, raise exception for agent/caller to handle
         raise DatabaseError(f"DB error checking URL: {e}")
     finally:
         if conn:
@@ -221,7 +281,6 @@ def search_google_news(query: str) -> List[Dict[str, str]]:
         data = response.json()
 
         results = []
-        # Defensive parsing of ZenRows response
         raw_results = data.get('organic_results', [])
         if not isinstance(raw_results, list):
             logging.warning("ZenRows 'organic_results' is not a list.")
@@ -267,12 +326,10 @@ def fact_check_claims(claims: List[str]) -> List[Dict[str, str]]:
         return []
 
     all_results = []
-    # Limit number of claims checked for performance and API usage reasons.
     claims_to_check = claims[:FACT_CHECK_CLAIM_LIMIT]
-    tool_errors = [] # Keep track of errors encountered
+    tool_errors = []
 
     for claim_text in claims_to_check:
-         # Limit query size due to potential API restrictions.
          truncated_claim = claim_text[:FACT_CHECK_QUERY_SIZE_LIMIT]
          logging.info(f"Checking claim: '{truncated_claim[:100]}...'")
          try:
@@ -287,7 +344,6 @@ def fact_check_claims(claims: List[str]) -> List[Dict[str, str]]:
              found_claims_data = data.get("claims", [])
 
              if found_claims_data and isinstance(found_claims_data, list):
-                 # Extract info from the first claimReview of the first claim found
                  first_claim_data = found_claims_data[0]
                  if first_claim_data and isinstance(first_claim_data, dict):
                      review_list = first_claim_data.get("claimReview", [])
@@ -309,31 +365,23 @@ def fact_check_claims(claims: List[str]) -> List[Dict[str, str]]:
          except requests.exceptions.Timeout:
              err_msg = f"Timeout calling Fact Check API for claim: {truncated_claim}"
              logging.error(err_msg)
-             tool_errors.append(err_msg) # Record error
-             # Continue to next claim, but record the failure
+             tool_errors.append(err_msg)
          except requests.exceptions.RequestException as e:
              err_msg = f"Error calling Google Fact Check API: {e}"
              logging.error(err_msg)
-             tool_errors.append(err_msg) # Record error
-             # Continue to next claim
+             tool_errors.append(err_msg)
          except json.JSONDecodeError as e:
              err_msg = f"Error decoding Google Fact Check API response: {e}"
              logging.error(err_msg)
-             tool_errors.append(err_msg) # Record error
-             # Continue to next claim
+             tool_errors.append(err_msg)
          except Exception as e:
              err_msg = f"Unexpected error during fact check for claim '{truncated_claim}': {e}"
              logging.error(err_msg)
-             tool_errors.append(err_msg) # Record error
-             # Continue to next claim
+             tool_errors.append(err_msg)
 
-    # After checking all claims, if any errors occurred, raise a single ApiError
-    # This informs the main loop that the tool execution was problematic.
     if tool_errors:
         combined_error_msg = f"Fact check tool encountered errors: {'; '.join(tool_errors)}"
-        # Log the combined error as well
         logging.error(combined_error_msg)
-        # Raise an error that the main analyze_article function can catch
         raise ApiError(combined_error_msg)
 
     logging.info(f"Found {len(all_results)} fact checks for {len(claims_to_check)} claims.")
@@ -351,8 +399,6 @@ def update_analysis_results(url: str, analysis_result: Dict[str, Any]) -> None:
     try:
         conn = get_db_connection()
         with conn, conn.cursor() as cursor:
-            # Use INSERT ... ON CONFLICT to handle updates if the URL already exists
-            # Ensure result_json column is of type JSONB in PostgreSQL
             cursor.execute(
                 f"""
                 INSERT INTO {ANALYSIS_RESULTS_TABLE} (url, result_json, timestamp)
@@ -361,17 +407,15 @@ def update_analysis_results(url: str, analysis_result: Dict[str, Any]) -> None:
                     result_json = EXCLUDED.result_json,
                     timestamp = NOW();
                 """,
-                (url, json.dumps(analysis_result)) # Store the result as a JSON string
+                (url, json.dumps(analysis_result))
             )
-            # No explicit commit needed when using 'with conn:' - it commits on success
             logging.info(f"Analysis result saved/updated for URL: {url}")
     except (psycopg2.Error, DatabaseError) as e:
         logging.error(f"Database error updating analysis results for '{url}': {e}")
-        # No explicit rollback needed with 'with conn:' - it rolls back on error
         raise DatabaseError(f"DB error updating results: {e}")
     except json.JSONDecodeError as e:
          logging.error(f"Error encoding analysis result to JSON for URL '{url}': {e}")
-         raise DatabaseError(f"Failed to serialize result to JSON: {e}") # Treat as DB error contextually
+         raise DatabaseError(f"Failed to serialize result to JSON: {e}")
     finally:
         if conn:
             release_db_connection(conn)
@@ -382,20 +426,17 @@ def update_analysis_results(url: str, analysis_result: Dict[str, Any]) -> None:
 try:
     check_configuration() # Check config and initialize DB pool
     if GOOGLE_API_KEY:
-        # Initialize the client first
         client = genai.Client(api_key=GOOGLE_API_KEY)
         logging.info("Gemini client initialized.")
     else:
         raise ConfigurationError("Google API Key is missing after configuration check.")
 
-    # Define the tools for the agent (using the actual functions)
     agent_tools = [
         check_database_for_url,
         search_google_news,
         fact_check_claims,
     ]
 
-    # Define the system instruction for the agent
     system_instruction = '''You are an AI agent specialized in detecting and classifying online news articles as credible or misleading. You will be given:
 
     url: a string containing the article's URL
@@ -484,7 +525,7 @@ try:
 
     Populate the `reasoning` array with clear, concise, user-friendly sentences summarizing the key findings.
     - Do NOT include internal process notes like "Database verdict: NOT_FOUND; domain is news -> proceeded".
-    - Instead, synthesize the findings. For example: "The source's credibility could not be verified in our database.", "No supporting articles were found from major news outlets.", "Key claims in the article were contradicted by fact-checking organizations." or "The article appears to be satirical in nature."
+    - Instead, synthesize the findings. For example: "The source's credibility could not be verified in our database.", "No supporting articles were found from reputable news outlets.", "Key claims in the article were contradicted by fact-checking organizations." or "The article appears to be satirical in nature."
     - If a tool failed (e.g., fact-check timeout), you might include a general statement like "Some fact-checking attempts were unsuccessful." if it impacts the conclusion, but avoid raw error messages.
 
     Merge Tool Results
@@ -548,10 +589,8 @@ try:
 
 except ConfigurationError as e:
     logging.critical(f"Configuration failed: {e}")
-    # model remains None
 except Exception as e:
     logging.critical(f"Failed to initialize Gemini client/model or DB pool: {e}")
-    # model remains None
 
 # --- Main Analysis Function ---
 
@@ -573,7 +612,6 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
     if not url or not article_text:
         return {"error": "URL and article text must be provided."}
 
-    # Prepare the initial prompt for the model
     initial_prompt = f"Analyze the following article:\nURL: {url}\n\nText:\n{article_text}"
 
     try:
@@ -588,12 +626,10 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
              [initial_prompt], 
         )
 
-        # After the loop (handled by the SDK), the final response should be text
         if hasattr(response, 'text'):
             final_text = response.text
             logging.info("Received final text response from Gemini after function calls.")
             try:
-                # Strip markdown fences if present
                 if final_text.startswith("```json"):
                     final_text = final_text.strip().removeprefix("```json").removesuffix("```").strip()
                 elif final_text.startswith("```"):
@@ -601,7 +637,6 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
 
                 analysis_result = json.loads(final_text)
                 logging.info(f"Analysis successful for URL: {url}")
-                # Optional: Update DB
                 try:
                     update_analysis_results(url, analysis_result)
                 except DatabaseError as db_err:
@@ -610,12 +645,9 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
             except json.JSONDecodeError as e:
                 logging.error(f"Error decoding final model JSON response: {e}")
                 logging.error(f"Raw final model response text: {final_text}")
-                # Include the raw text in the error for debugging
                 return {"error": "Model did not return valid JSON in the final response.", "raw_response": final_text}
         else:
-            # Handle cases where the response might not have text (e.g., blocked)
             logging.error("Final response from Gemini did not contain text.")
-            # Log details if available
             if hasattr(response, 'prompt_feedback'):
                  logging.error(f"Prompt Feedback: {response.prompt_feedback}")
             if hasattr(response, 'candidates') and response.candidates:
@@ -625,11 +657,9 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
             return {"error": "Model did not provide a final text analysis after function calls."}
 
     except (ApiError, DatabaseError, ConfigurationError) as known_err:
-         # Errors raised by our tool functions during the SDK's automatic calling
          logging.error(f"A tool function failed during analysis for URL '{url}': {known_err}")
          return {"error": f"Analysis failed due to tool error: {known_err}"}
     except Exception as e:
-        # Catch potential errors from chat.send_message or other unexpected issues
         logging.critical(f"An unexpected error occurred during Gemini interaction for URL '{url}': {e}")
         logging.critical(traceback.format_exc())
         return {"error": f"An unexpected server error occurred during analysis interaction."}
@@ -638,67 +668,70 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
 # --- Flask App Setup ---
 app = Flask(__name__)
 
-# Ensure configuration and DB pool are checked/initialized when the app starts
-# Note: In production, consider more robust initialization (e.g., Flask app factory)
 try:
     check_configuration()
 except ConfigurationError as e:
     logging.critical(f"CRITICAL CONFIGURATION ERROR: {e}. Flask app might not function correctly.")
-    # Decide if the app should fail to start entirely
-    # raise e # Uncomment to prevent app start on config error
 
 @app.route('/analyze', methods=['POST'])
 def handle_analyze():
     """Flask endpoint to handle article analysis requests."""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({"error": "Authorization header missing or invalid"}), 401
+
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
 
     data = request.get_json()
     url = data.get('url')
     article_text = data.get('article_text')
+    google_user_id = data.get('google_user_id') # Get user ID from payload
 
     if not url or not article_text:
         return jsonify({"error": "Missing 'url' or 'article_text' in JSON payload"}), 400
 
-    # Call the existing analysis function
+    if not google_user_id: # Check if user ID is present
+         logging.warning("Request received without google_user_id in payload.")
+         return jsonify({"error": "Missing 'google_user_id' in JSON payload"}), 401 # Treat as unauthorized
+
+    try:
+        # Get user info from DB using the provided ID
+        db_user = get_or_create_user(google_user_id)
+        logging.info(f"Request authorized for user ID: {db_user['id']} (Tier: {db_user['tier']}) via provided google_user_id")
+
+    except (ValueError, DatabaseError) as user_err: # Catch errors from get_or_create_user
+        logging.error(f"User lookup/creation failed for google_user_id {google_user_id}: {user_err}")
+        # Return 401 if ID was invalid, 500 for DB errors
+        status_code = 401 if isinstance(user_err, ValueError) else 500
+        return jsonify({"error": f"User lookup/creation failed: {user_err}"}), status_code
+    except Exception as e:
+        logging.error(f"Unexpected error during user processing for {google_user_id}: {e}")
+        return jsonify({"error": "An unexpected error occurred during user processing"}), 500
+
+    # --- Proceed with analysis ---
     result = analyze_article(url, article_text)
 
-    # Determine status code based on result
     status_code = 500 if "error" in result else 200
-    # If specific errors occurred (like config), maybe return 503 Service Unavailable
     if "error" in result and "Agent configuration failed" in result["error"]:
         status_code = 503
 
     return jsonify(result), status_code
 
-# Optional: Add a basic root endpoint for health check or info
 @app.route('/')
 def index():
-    # Check if the client initialized correctly
-    client_status = "Initialized" if client else "Not Initialized (Check Logs)" # Check client instead of model
+    client_status = "Initialized" if client else "Not Initialized (Check Logs)"
     db_status = "Pool Available" if db_pool else "Pool Not Available (Check Logs)"
     return jsonify({
         "message": "TruthScope Analysis Backend",
-        "client_status": client_status, # Use client_status
+        "client_status": client_status,
         "database_status": db_status
     })
 
 
-# --- Server Execution & Cleanup ---
 if __name__ == "__main__":
-    # Note: Flask's development server is not recommended for production.
-    # Use a production-ready WSGI server like Gunicorn or Waitress.
     logging.info("Starting Flask development server...")
-    # Use host='0.0.0.0' to make it accessible on the network
-    # Use debug=True for development (enables auto-reloading, detailed errors)
-    # Set debug=False for production environments
     app.run(host='0.0.0.0', port=5000, debug=True)
-
-    # Cleanup code (like closing DB pool) might need adjustment
-    # depending on the WSGI server and deployment strategy.
-    # For the dev server, this might run on Ctrl+C, but it's not guaranteed.
-    # Consider using Flask's @app.teardown_appcontext for cleanup per request
-    # or signal handling for graceful shutdown in production.
     logging.info("Flask server stopping...")
-    close_db_pool() # Attempt cleanup
+    close_db_pool()
     logging.info("Script finished.")
