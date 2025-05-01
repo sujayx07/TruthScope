@@ -225,24 +225,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(result => {
           console.log(`[Tab ${tabId}] Media item analysis result for ${mediaUrl}:`, result);
 
-          // <<< Extract the single line summary and send back >>>
-          // Assuming backend returns { "analysis_summary": "..." }
-          const summaryText = result?.analysis_summary || "Analysis complete, no summary provided.";
+          // <<< Send more detailed result back to content script >>>
+          // Extract relevant fields, handle potential errors within the result
+          const responseData = {
+              mediaId: mediaId,
+              mediaType: mediaType, // Include mediaType for context in content script
+              summary: result?.analysis_summary, // Keep the summary
+              error: result?.error, // Pass backend error if present
+              status: result?.status, // Pass overall status ('success' or 'error')
+              // Add specific fields from the backend response if available
+              manipulation_confidence: result?.manipulation_confidence,
+              manipulated_found: result?.manipulated_images_found ?? result?.manipulated_videos_found ?? result?.manipulated_audios_found, // Get the count based on type
+              parsed_text: result?.manipulated_media?.[0]?.parsed_text, // Assuming single media item analysis
+              ai_generated_score: result?.manipulated_media?.[0]?.ai_generated, // Raw score if needed
+              ocr_error: result?.manipulated_media?.[0]?.ocr_error,
+              manipulation_error: result?.manipulated_media?.[0]?.manipulation_error
+          };
+
+          // <<< ADD LOGGING HERE >>>
+          console.log(`[Tab ${tabId}] Attempting to send displayMediaAnalysis for mediaId ${mediaId} with data:`, responseData);
 
           chrome.tabs.sendMessage(tabId, {
               action: "displayMediaAnalysis",
-              data: {
-                  mediaId: mediaId,
-                  summary: summaryText // Send only the summary text
-              }
-          }).catch(err => console.log(`[Tab ${tabId}] Error sending displayMediaAnalysis to content script:`, err));
+              data: responseData // Send the richer data object
+          }).then(() => {
+              // <<< ADD SUCCESS LOGGING >>>
+              console.log(`[Tab ${tabId}] Successfully sent displayMediaAnalysis for mediaId ${mediaId}`);
+          }).catch(err => {
+              // <<< IMPROVE ERROR LOGGING >>>
+              console.error(`[Tab ${tabId}] Error sending displayMediaAnalysis for mediaId ${mediaId} to content script:`, err, "Is the content script active on this tab?");
+          });
 
-          // Notify other UI components (optional, send summary)
+          // Notify other UI components (optional, could send more data too)
           chrome.runtime.sendMessage({
               action: "mediaAnalysisItemComplete",
               tabId: tabId,
               mediaUrl: mediaUrl,
-              summary: summaryText // Send summary
+              result: responseData // Send richer data
           }).catch(err => console.log(`Error notifying UI components of media item analysis completion:`, err));
 
           // Send success back to the content script's button handler
@@ -254,12 +273,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // <-- Log the full error object for more details -->
           console.error(`[Tab ${tabId}] ❌ Error during media item analysis fetch for ${mediaUrl}. Full Error:`, error);
 
-          // <<< Send error back to content script for display >>>
+          // <<< Send structured error back to content script for display >>>
           chrome.tabs.sendMessage(tabId, {
               action: "displayMediaAnalysis",
               data: {
                   mediaId: mediaId,
-                  error: errorMessage // Send error message (no change here)
+                  mediaType: mediaType, // Include type even on error
+                  status: 'error', // Indicate error status
+                  error: errorMessage // Send error message
               }
           }).catch(err => console.log(`[Tab ${tabId}] Error sending displayMediaAnalysis (error) to content script:`, err));
 

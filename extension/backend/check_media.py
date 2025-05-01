@@ -1,153 +1,199 @@
 import logging
+import os
 from flask import Flask, request, jsonify
-from flask_cors import CORS # Import CORS
+from flask_cors import CORS
 import requests
 import json
-import base64
+
+# --- Configuration ---
+SIGHTENGINE_API_USER = os.environ.get('SIGHTENGINE_API_USER', '99030650')
+SIGHTENGINE_API_SECRET = os.environ.get('SIGHTENGINE_API_SECRET', 'rUSbX3YpAnSeWr2GRqpfRqYaJr8HFhdh')
+OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', 'K85699750588957')
+SIGHTENGINE_API_URL = 'https://api.sightengine.com/1.0/check.json'
+OCR_SPACE_API_URL = 'https://api.ocr.space/parse/imageurl'
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
 
-# Create a Blueprint for media-related routes
-media_bp = Flask(__name__)
-CORS(media_bp) # Enable CORS for the entire app
+# Create Flask app and enable CORS
+app = Flask(__name__)
+CORS(app)
 
-def analyze_image(url):
-    """Analyze an image for manipulations."""
+# --- API Client Functions ---
+
+def call_sightengine_api(image_url):
+    """Calls the Sightengine API to check for AI generation."""
+    logging.info(f"Calling Sightengine API for URL: {image_url}")
     params = {
-        'url': url,
+        'url': image_url,
         'models': 'genai',
-        'api_user': '99030650',
-        'api_secret': 'rUSbX3YpAnSeWr2GRqpfRqYaJr8HFhdh'
+        'api_user': SIGHTENGINE_API_USER,
+        'api_secret': SIGHTENGINE_API_SECRET
     }
-    response = requests.get('https://api.sightengine.com/1.0/check.json', params=params)
-    return response.json()
+    try:
+        response = requests.get(SIGHTENGINE_API_URL, params=params, timeout=15)
+        response.raise_for_status()
+        logging.info(f"Sightengine API response status: {response.status_code}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Sightengine API request failed: {e}")
+        return {"error": f"Sightengine API request failed: {e}", "status": "error"}
+    except json.JSONDecodeError:
+        logging.error("Failed to decode Sightengine API response JSON.")
+        return {"error": "Invalid JSON response from Sightengine API", "status": "error"}
 
-def extract_text_from_image(image_url):
-    """Extract text from an image using OCR.space API."""
-    api_key = "K85699750588957"
-    api_url = "https://api.ocr.space/parse/imageurl"
-    payload = {"apikey": api_key, "url": image_url, "language": "eng"}
-    response = requests.get(api_url, params=payload)
-    return response.json()
+def call_ocr_space_api(image_url):
+    """Calls the OCR.space API to extract text."""
+    logging.info(f"Calling OCR.space API for URL: {image_url}")
+    payload = {
+        "apikey": OCR_SPACE_API_KEY,
+        "url": image_url,
+        "language": "eng"
+    }
+    try:
+        response = requests.get(OCR_SPACE_API_URL, params=payload, timeout=15)
+        response.raise_for_status()
+        logging.info(f"OCR.space API response status: {response.status_code}")
+        result = response.json()
+        if result.get("IsErroredOnProcessing"):
+            error_message = result.get("ErrorMessage", ["Unknown OCR error"])[0]
+            logging.error(f"OCR.space API processing error: {error_message}")
+            return {"error": f"OCR processing error: {error_message}", "status": "error"}
+        return result
+    except requests.exceptions.RequestException as e:
+        logging.error(f"OCR.space API request failed: {e}")
+        return {"error": f"OCR.space API request failed: {e}", "status": "error"}
+    except json.JSONDecodeError:
+        logging.error("Failed to decode OCR.space API response JSON.")
+        return {"error": "Invalid JSON response from OCR.space API", "status": "error"}
 
-def analyze_image_v2(url):
-    """Analyze an image for manipulations and return results in the required format."""
-    ocr_result = extract_text_from_image(url)
-    manipulation_result = analyze_image(url)
+# --- Analysis Logic ---
 
-    parsed_text = ocr_result.get("ParsedResults", [{}])[0].get("ParsedText", "")
-    ai_generated = manipulation_result.get("type", {}).get("ai_generated", 0.0)
+def analyze_image_logic(image_url):
+    """Analyzes an image using Sightengine and OCR.space, returning a structured result."""
+    logging.info(f"Starting image analysis for: {image_url}")
+
+    manipulation_result = call_sightengine_api(image_url)
+    ocr_result = call_ocr_space_api(image_url)
+
+    ai_generated = 0.0
+    manipulation_confidence = 0.0
+    manipulation_error = None
+    if manipulation_result.get("status") == "success":
+        ai_generated = manipulation_result.get("type", {}).get("ai_generated", 0.0)
+        manipulation_confidence = ai_generated
+    elif manipulation_result.get("status") == "error":
+        manipulation_error = manipulation_result.get("error", "Unknown Sightengine error")
+        logging.warning(f"Sightengine analysis failed for {image_url}: {manipulation_error}")
+    else:
+        manipulation_error = manipulation_result.get("error", "Unexpected response from Sightengine")
+        logging.warning(f"Sightengine analysis had unexpected response for {image_url}: {manipulation_result}")
+
+    parsed_text = ""
+    ocr_error = None
+    if ocr_result and not ocr_result.get("IsErroredOnProcessing") and ocr_result.get("ParsedResults"):
+        parsed_text = ocr_result["ParsedResults"][0].get("ParsedText", "").strip()
+    elif ocr_result.get("status") == "error":
+        ocr_error = ocr_result.get("error", "Unknown OCR error")
+        logging.warning(f"OCR analysis failed for {image_url}: {ocr_error}")
+    else:
+        ocr_error = ocr_result.get("error", "Unexpected response from OCR.space")
+        logging.warning(f"OCR analysis had unexpected response for {image_url}: {ocr_result}")
+
+    analysis_summary = ""
+    final_status = "success"
+    manipulated_found = 1 if ai_generated >= 0.5 else 0
+
+    if manipulation_error and ocr_error:
+        analysis_summary = f"Analysis failed. Sightengine: {manipulation_error}. OCR: {ocr_error}"
+        final_status = "error"
+        manipulated_found = 0
+        manipulation_confidence = 0.0
+    elif manipulation_error:
+        analysis_summary = f"Manipulation check failed: {manipulation_error}. OCR Text: '{parsed_text[:50]}...'" if parsed_text else "Manipulation check failed. No text extracted."
+        manipulated_found = 0
+        manipulation_confidence = 0.0
+    elif ocr_error:
+        analysis_summary = f"AI Gen: {ai_generated:.2f}. OCR failed: {ocr_error}"
+    else:
+        detection_text = f"Detected as {'AI Generated' if manipulated_found else 'Likely Authentic'} (Confidence: {manipulation_confidence:.2f})."
+        ocr_text_summary = f" Extracted text: '{parsed_text[:50]}...'" if parsed_text else " No text extracted."
+        analysis_summary = detection_text + ocr_text_summary
 
     result = {
+        "status": final_status,
         "images_analyzed": 1,
-        "manipulated_images_found": 0 if ai_generated < 0.5 else 1,
-        "manipulation_confidence": ai_generated,
+        "manipulated_images_found": manipulated_found,
+        "manipulation_confidence": manipulation_confidence,
         "manipulated_media": [
             {
-                "url": url,
+                "url": image_url,
                 "type": "image",
-                "ParsedText": parsed_text,
-                "ai_generated": ai_generated
+                "parsed_text": parsed_text if not ocr_error else None,
+                "ai_generated": ai_generated if not manipulation_error else None,
+                "ocr_error": ocr_error,
+                "manipulation_error": manipulation_error
             }
-        ]
+        ],
+        "analysis_summary": analysis_summary
     }
 
+    logging.info(f"Image analysis complete for {image_url}. Summary: {analysis_summary}")
     return result
 
-def analyze_media(media_list):
-    """Analyze a list of media (images only)."""
-    mediaResult = {
-        "images_analyzed": 0,
-        "manipulated_images_found": 0,
-        "manipulation_confidence": 0.0,
-        "manipulated_media": []
-    }
+# --- Flask Endpoints ---
 
-    for media in media_list:
-        if media["type"] == "image":
-            # Analyze image using both APIs
-            ocr_result = extract_text_from_image(media["url"])
-            manipulation_result = analyze_image(media["url"])
+def validate_request(request):
+    """Validates incoming request for JSON and media_url."""
+    if not request.is_json:
+        logging.warning("Request is not JSON")
+        return None, jsonify({"error": "Request must be JSON", "analysis_summary": "Error: Invalid request format."}), 400
 
-            # Extract minimal data from API outputs
-            parsed_text = ocr_result.get("ParsedResults", [{}])[0].get("ParsedText", "")
-            ai_generated = manipulation_result.get("type", {}).get("ai_generated", 0.0)
+    data = request.get_json()
+    logging.debug(f"Received JSON data: {data}")
+    media_url = data.get('media_url')
 
-            mediaResult["images_analyzed"] += 1
-            if manipulation_result.get("status") == "success":
-                mediaResult["manipulated_media"].append({
-                    "url": media["url"],
-                    "type": "image",
-                    "ParsedText": parsed_text,
-                    "ai_generated": ai_generated
-                })
+    if not media_url:
+        logging.warning("Missing 'media_url' in JSON payload")
+        return None, jsonify({"error": "Missing 'media_url' in JSON payload", "analysis_summary": "Error: Missing media URL."}), 400
 
-    # Calculate average confidence
-    if mediaResult["manipulated_media"]:
-        total_confidence = sum(item.get("ai_generated", 0.0) for item in mediaResult["manipulated_media"])
-        mediaResult["manipulation_confidence"] = total_confidence / len(mediaResult["manipulated_media"])
+    if not (media_url.startswith('http://') or media_url.startswith('https://')):
+        logging.warning(f"Invalid 'media_url' format: {media_url}")
+        return None, jsonify({"error": "Invalid 'media_url' format", "analysis_summary": "Error: Invalid media URL format."}), 400
 
-    # Print minimal final output
-    print(json.dumps(mediaResult, indent=4))
-    return mediaResult
+    return media_url, None, None
 
-def main():
-    media_list = [
-        {"type": "image", "url": "https://www.slidecow.com/wp-content/uploads/2018/04/Setting-Up-The-Slide-Text.jpg"},
-    ]
-
-    for media in media_list:
-        if media["type"] == "image":
-            result = analyze_image_v2(media["url"])
-            print(json.dumps(result, indent=4))
-
-# Update the /analyze_image endpoint to return results in the required format
-@media_bp.route('/analyze_image', methods=['POST'])
+@app.route('/analyze_image', methods=['POST'])
 def handle_analyze_image():
     """Flask endpoint to handle image analysis requests."""
     logging.info("Received request at /analyze_image")
+    media_url, error_response, status_code = validate_request(request)
+    if error_response:
+        return error_response, status_code
 
-    if not request.is_json:
-        logging.warning("Request is not JSON")
-        return jsonify({"error": "Request must be JSON"}), 400
+    try:
+        result = analyze_image_logic(media_url)
+        http_status = 200 if result.get("status") == "success" else 500
+        logging.info(f"Returning image analysis result for: {media_url}")
+        return jsonify(result), http_status
+    except Exception as e:
+        logging.exception(f"Unexpected error during image analysis for {media_url}: {e}")
+        return jsonify({
+            "error": "An unexpected server error occurred during image analysis.",
+            "status": "error",
+            "analysis_summary": "Error: Server failed during image analysis."
+        }), 500
 
-    data = request.get_json()
-    logging.info(f"Received JSON data: {data}")
-    media_url = data.get('media_url')
-
-    if not media_url:
-        logging.warning("Missing 'media_url' in JSON payload")
-        return jsonify({"error": "Missing 'media_url' in JSON payload"}), 400
-
-    # Call the analyze_image_v2 function from Check_everyMedia.py
-    result = analyze_image_v2(media_url)
-
-    logging.info(f"Returning analysis result for: {media_url}")
-    # Print the final JSON result to the console
-    logging.info(f"Final analysis result: {json.dumps(result, indent=4)}")
-    return jsonify(result), 200
-
-# Update the /analyze_video endpoint to return a placeholder response
-@media_bp.route('/analyze_video', methods=['POST'])
+@app.route('/analyze_video', methods=['POST'])
 def handle_analyze_video():
-    """Flask endpoint to handle video analysis requests."""
+    """Flask endpoint for video analysis (Placeholder)."""
     logging.info("Received request at /analyze_video")
+    media_url, error_response, status_code = validate_request(request)
+    if error_response:
+        return error_response, status_code
 
-    if not request.is_json:
-        logging.warning("Request is not JSON")
-        return jsonify({"error": "Request must be JSON"}), 400
-
-    data = request.get_json()
-    logging.info(f"Received JSON data: {data}")
-    media_url = data.get('media_url')
-
-    if not media_url:
-        logging.warning("Missing 'media_url' in JSON payload")
-        return jsonify({"error": "Missing 'media_url' in JSON payload"}), 400
-
-    # Placeholder response for video analysis
     result = {
+        "status": "success",
         "videos_analyzed": 1,
         "manipulated_videos_found": 0,
         "manipulation_confidence": 0.0,
@@ -155,75 +201,44 @@ def handle_analyze_video():
             {
                 "url": media_url,
                 "type": "video",
-                "ai_generated": 0.0
+                "ai_generated": None,
+                "error": None
             }
-        ]
+        ],
+        "analysis_summary": "Video analysis is not yet implemented."
     }
-
     logging.info(f"Returning placeholder video analysis result for: {media_url}")
     return jsonify(result), 200
 
-# --- NEW FAKE Audio Analysis Endpoint ---
-@media_bp.route('/analyze_audio', methods=['POST'])
+@app.route('/analyze_audio', methods=['POST'])
 def handle_analyze_audio():
-    """Flask endpoint to handle audio analysis requests (FAKE)."""
-    logging.info("Received request at /analyze_audio") # <-- Added log
-    # Note: SightEngine doesn't typically handle audio, but we keep the fake structure
-    return _handle_fake_media_request('audio')
+    """Flask endpoint for audio analysis (Placeholder)."""
+    logging.info("Received request at /analyze_audio")
+    media_url, error_response, status_code = validate_request(request)
+    if error_response:
+        return error_response, status_code
 
-# --- Helper for Fake Media Requests ---
-def _handle_fake_media_request(expected_type: str):
-    """Helper function to process fake media requests."""
-    logging.info(f"Handling fake {expected_type} request. Headers: {request.headers}") # <-- Added log
-    if not request.is_json:
-        logging.warning("Request is not JSON") # <-- Added log
-        return jsonify({"error": "Request must be JSON"}), 400
+    result = {
+        "status": "success",
+        "audios_analyzed": 1,
+        "manipulated_audios_found": 0,
+        "manipulation_confidence": 0.0,
+        "manipulated_media": [
+            {
+                "url": media_url,
+                "type": "audio",
+                "ai_generated": None,
+                "error": None
+            }
+        ],
+        "analysis_summary": "Audio analysis is not yet implemented."
+    }
+    logging.info(f"Returning placeholder audio analysis result for: {media_url}")
+    return jsonify(result), 200
 
-    data = request.get_json()
-    logging.info(f"Received JSON data: {data}") # <-- Added log
-    media_url = data.get('media_url')
-
-    logging.info(f"--- FAKE {expected_type.capitalize()} Analysis Request --- URL: {media_url}")
-
-    if not media_url:
-        logging.warning("Missing 'media_url' in JSON payload") # <-- Added log
-        return jsonify({"error": "Missing 'media_url' in JSON payload"}), 400
-
-    # <<< Generate a single-line summary >>>
-    analysis_summary = f"Fake analysis summary for {expected_type}: {media_url[:50]}..."
-
-    logging.info(f"Returning FAKE {expected_type} analysis summary for: {media_url}")
-    # <<< Return only the summary field >>>
-    return jsonify({"analysis_summary": analysis_summary}), 200
-# --- END FAKE Media Endpoints ---
-
-# --- Original SightEngine Example (Commented Out) ---
-# import requests
-# import json
-# params = {
-#   'url': 'https://i.ytimg.com/vi/hfqQwro1OqE/maxresdefault.jpg',
-#   'models': 'genai',
-#   'api_user': 'YOUR_API_USER', # Replace with actual credentials or env vars
-#   'api_secret': 'YOUR_API_SECRET' # Replace with actual credentials or env vars
-# }
-# try:
-#     r = requests.get('https://api.sightengine.com/1.0/check.json', params=params)
-#     r.raise_for_status() # Raise an exception for bad status codes
-#     output = r.json() # Use .json() method
-#     print(json.dumps(output, indent=2))
-#     print("Status: ", output.get('status', 'N/A')) # Use .get for safer access
-# except requests.exceptions.RequestException as e:
-#     print(f"Error calling SightEngine API: {e}")
-# except json.JSONDecodeError:
-#     print(f"Error decoding SightEngine response: {r.text}")
+# --- Main Execution ---
 
 if __name__ == "__main__":
-    # Note: Flask's development server is not recommended for production.
-    # Use a production-ready WSGI server like Gunicorn or Waitress.
-    logging.info("Starting Flask development server for media analysis...") # <-- Added log
-    # Use host='0.0.0.0' to make it accessible on the network
-    # Use debug=True for development (enables auto-reloading, detailed errors)
-    # Set debug=False for production environments
-    media_bp.run(host='0.0.0.0', port=3000, debug=True) # Ensure debug is True for auto-reload
-    logging.info("Flask server stopping...")
-    logging.info("Script finished.")
+    logging.info("Starting Flask development server for media analysis...")
+    app.run(host='0.0.0.0', port=3000, debug=True)
+    logging.info("Flask server stopping.")

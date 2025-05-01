@@ -9,6 +9,7 @@ from urllib.parse import urlparse, quote
 from dotenv import load_dotenv # For .env file support
 from google import genai
 from google.genai import types
+from datetime import datetime
 from typing import Optional, List, Dict, Any, Union # For improved type hinting
 from flask import Flask, request, jsonify # Added Flask imports
 
@@ -16,7 +17,7 @@ from flask import Flask, request, jsonify # Added Flask imports
 load_dotenv() # Load variables from .env file if it exists
 
 # --- Configuration & Constants ---
-
+datetime = datetime.now()
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -400,6 +401,8 @@ try:
     url: a string containing the article's URL
 
     text: the full text of the article
+    
+    Today's date is {datetime}.
 
     Your job is to decide whether the article is likely real or fake, support your determination with evidence, and output only the following JSON object (no additional text):
 
