@@ -1,14 +1,17 @@
 import logging
 import os
+from dotenv import load_dotenv # Add this import
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import json
 
+load_dotenv() # Load environment variables from .env file
+
 # --- Configuration ---
-SIGHTENGINE_API_USER = os.environ.get('SIGHTENGINE_API_USER', '99030650')
-SIGHTENGINE_API_SECRET = os.environ.get('SIGHTENGINE_API_SECRET', 'rUSbX3YpAnSeWr2GRqpfRqYaJr8HFhdh')
-OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', 'K85699750588957')
+SIGHTENGINE_API_USER = os.environ.get('SIGHTENGINE_API_USER') # Remove default
+SIGHTENGINE_API_SECRET = os.environ.get('SIGHTENGINE_API_SECRET') # Remove default
+OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY') # Remove default
 SIGHTENGINE_API_URL = 'https://api.sightengine.com/1.0/check.json'
 OCR_SPACE_API_URL = 'https://api.ocr.space/parse/imageurl'
 

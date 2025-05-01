@@ -250,6 +250,38 @@ function injectStyles() {
             max-width: calc(100% - 10px); /* Prevent overflow */
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
+        /* --- Compact Result Overlay for Small Media --- */
+        .truthscope-result-compact {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9997; /* Below button, above media */
+            pointer-events: none; /* Allow clicks through */
+            opacity: 0.4; /* Semi-transparent */
+            border-radius: 3px; /* Match button */
+            box-sizing: border-box;
+            border: 2px solid transparent; /* Base border */
+        }
+        .truthscope-result-compact.is-authentic {
+            background-color: rgba(0, 255, 0, 0.3); /* Green tint */
+            border-color: rgba(0, 128, 0, 0.7);
+        }
+        .truthscope-result-compact.is-manipulated {
+            background-color: rgba(255, 0, 0, 0.3); /* Red tint */
+            border-color: rgba(139, 0, 0, 0.7);
+        }
+        .truthscope-result-compact.is-error {
+            background-color: rgba(255, 165, 0, 0.3); /* Orange tint */
+            border-color: rgba(204, 132, 0, 0.7);
+        }
+        .truthscope-result-compact.is-unknown {
+            background-color: rgba(128, 128, 128, 0.3); /* Gray tint */
+            border-color: rgba(80, 80, 80, 0.7);
+        }
+        /* --- End Compact Result Overlay --- */
+
         /* --- Updated Style for False Warning Header --- */
         .truthscope-false-warning-header {
             position: fixed; /* Or sticky */
@@ -410,9 +442,9 @@ function addFalseWarningHeader(message) {
     document.body.prepend(headerDiv);
 }
 
-// Store analysis results temporarily
-const analysisResults = {}; // Key: mediaId, Value: resultText
-const mediaElementMap = {}; // Key: mediaId, Value: buttonElement
+// Store analysis results temporarily and map IDs to elements/buttons
+const analysisResults = {}; // Key: mediaId, Value: resultText (Consider removing if not used elsewhere)
+const mediaDataMap = {}; // Key: mediaId, Value: { button: ButtonElement, element: MediaElement }
 
 // Function to inject analysis button
 let mediaCounter = 0;
@@ -466,8 +498,8 @@ function injectAnalysisButton(mediaElement) {
     }
     // --- End Filtering ---
 
-    // Check if button already exists
-    if (mediaElement.dataset.truthscopeId && mediaElementMap[mediaElement.dataset.truthscopeId]) {
+    // Check if button already exists for this element
+    if (mediaElement.dataset.truthscopeId && mediaDataMap[mediaElement.dataset.truthscopeId]) {
         return; // Already processed
     }
 
@@ -504,82 +536,125 @@ function injectAnalysisButton(mediaElement) {
     });
 
     mediaElement.parentElement.appendChild(button);
-    mediaElementMap[mediaId] = button; // Store button reference
+    mediaDataMap[mediaId] = { button: button, element: mediaElement }; // Store button and element reference
 }
 
 // Function to display analysis result
 function displayAnalysisResult(mediaId, analysisData) {
-    const button = mediaElementMap[mediaId];
-    if (!button) {
-        console.error(`Button not found for mediaId: ${mediaId}`);
+    const mediaData = mediaDataMap[mediaId];
+    if (!mediaData || !mediaData.button || !mediaData.element) {
+        console.error(`Button or media element not found for mediaId: ${mediaId}`);
+        // Attempt to find button by dataset just in case map failed
+        const fallbackButton = document.querySelector(`.truthscope-analyze-button[data-media-id="${mediaId}"]`);
+        if (fallbackButton) {
+            fallbackButton.textContent = 'Error';
+            fallbackButton.disabled = false;
+        }
         return;
     }
 
-    // Find the container using the class we added
-    let container = button.closest('.truthscope-positioning-container');
+    const button = mediaData.button;
+    const mediaElement = mediaData.element;
+    const container = button.parentElement; // Assume button is direct child for positioning result
 
     if (!container) {
-        // <<< Fallback Logic >>>
-        console.warn(`Positioning container with class '.truthscope-positioning-container' not found for mediaId: ${mediaId}. Falling back to button's parent.`);
-        container = button.parentElement; // Use the direct parent as fallback
-        if (!container) {
-             console.error(`Button's parentElement is also null for mediaId: ${mediaId}. Cannot display result.`);
-             // Optional: Reset button state even if we can't display
-             button.textContent = 'Analyze';
-             button.disabled = false;
-             return;
-        }
-        // <<< End Fallback Logic >>>
+        console.error(`Button's parentElement is null for mediaId: ${mediaId}. Cannot display result.`);
+        button.textContent = 'Analyze';
+        button.disabled = false;
+        return;
     }
 
-    // Remove existing result if any (search within the determined container)
-    const existingResult = container.querySelector(`.truthscope-analysis-result[data-media-id="${mediaId}"]`);
+    // Remove existing result if any
+    const existingResult = container.querySelector(`.truthscope-analysis-result[data-media-id="${mediaId}"], .truthscope-result-compact[data-media-id="${mediaId}"]`);
     if (existingResult) {
         existingResult.remove();
     }
 
     const resultDiv = document.createElement('div');
-    resultDiv.classList.add('truthscope-analysis-result');
     resultDiv.dataset.mediaId = mediaId;
 
-    let resultText = "Analysis Result:";
+    // --- Size Check for Compact View ---
+    const useCompactView = mediaElement.offsetWidth < 100 || mediaElement.offsetHeight < 100;
+    let resultStatusClass = 'is-unknown'; // Default status
+    let isLikelyAI = false;
 
-    if (analysisData.status === 'error' && analysisData.error) {
-        resultText = `Error: ${analysisData.error}`;
-    } else if (analysisData.status === 'error' && analysisData.summary) {
-        resultText = `Analysis Failed: ${analysisData.summary}`;
+    // Determine status based on analysisData
+    if (analysisData.status === 'error') {
+        resultStatusClass = 'is-error';
     } else if (analysisData.status === 'success') {
         const mediaType = analysisData.mediaType?.toLowerCase();
-
         if (mediaType === 'img' || mediaType === 'image') {
             const confidence = analysisData.manipulation_confidence;
-            const aiLikelihoodPercent = confidence !== null && confidence !== undefined 
-                                      ? (confidence * 100).toFixed(1) + '%' 
-                                      : 'N/A';
-            
-            const isLikelyAI = confidence >= 0.5;
-            const manipulationStatus = isLikelyAI ? 'Likely AI Generated/Manipulated' : 'Likely Authentic';
-
-            resultText = `${manipulationStatus} (AI Likelihood: ${aiLikelihoodPercent})`;
-
-            if (analysisData.parsed_text) {
-                resultText += ` | Text: "${analysisData.parsed_text.substring(0, 30)}..."`;
-            } else if (analysisData.ocr_error) {
-                resultText += ` | OCR Error: ${analysisData.ocr_error}`;
+            if (confidence !== null && confidence !== undefined) {
+                 isLikelyAI = confidence >= 0.5;
+                 resultStatusClass = isLikelyAI ? 'is-manipulated' : 'is-authentic';
+            } else {
+                 resultStatusClass = 'is-unknown'; // Confidence missing
             }
         } else if (mediaType === 'video' || mediaType === 'audio') {
-            resultText = analysisData.summary || "Analysis result unavailable.";
+            // For video/audio, we might need a different logic based on summary
+            // For now, let's assume summary implies authenticity unless error
+            // This needs refinement based on actual backend output for video/audio
+            resultStatusClass = 'is-authentic'; // Placeholder
+            if (!analysisData.summary) {
+                 resultStatusClass = 'is-unknown';
+            }
+            // Example: if summary contains "likely deepfake", set is-manipulated
+            // if (analysisData.summary && analysisData.summary.toLowerCase().includes('deepfake')) {
+            //     resultStatusClass = 'is-manipulated';
+            // }
         } else {
-            resultText = analysisData.summary || "Analysis complete, result format unclear.";
+             resultStatusClass = 'is-unknown'; // Unknown media type
         }
-
     } else {
-        resultText = analysisData.summary || "Analysis complete, but result format unclear.";
+        // Handle cases where status might be missing or different
+        resultStatusClass = 'is-unknown';
     }
 
-    resultDiv.textContent = resultText;
+    if (useCompactView) {
+        resultDiv.classList.add('truthscope-result-compact', resultStatusClass);
+        // No text content for compact view
+    } else {
+        // --- Standard Text Result Logic ---
+        resultDiv.classList.add('truthscope-analysis-result');
+        let resultText = "Analysis Result:";
 
-    // Append result to the determined container
+        if (analysisData.status === 'error' && analysisData.error) {
+            resultText = `Error: ${analysisData.error}`;
+        } else if (analysisData.status === 'error' && analysisData.summary) {
+            resultText = `Analysis Failed: ${analysisData.summary}`;
+        } else if (analysisData.status === 'success') {
+            const mediaType = analysisData.mediaType?.toLowerCase();
+
+            if (mediaType === 'img' || mediaType === 'image') {
+                const confidence = analysisData.manipulation_confidence;
+                const aiLikelihoodPercent = confidence !== null && confidence !== undefined
+                                          ? (confidence * 100).toFixed(1) + '%'
+                                          : 'N/A';
+
+                const manipulationStatus = resultStatusClass === 'is-manipulated' ? 'Likely AI/Manipulated' : (resultStatusClass === 'is-authentic' ? 'Likely Authentic' : 'Status Unknown');
+
+                resultText = `${manipulationStatus} (AI Likelihood: ${aiLikelihoodPercent})`;
+
+                if (analysisData.parsed_text) {
+                    resultText += ` | Text: "${analysisData.parsed_text.substring(0, 30)}..."`;
+                } else if (analysisData.ocr_error) {
+                    resultText += ` | OCR Error: ${analysisData.ocr_error}`;
+                }
+            } else if (mediaType === 'video' || mediaType === 'audio') {
+                resultText = analysisData.summary || "Analysis result unavailable.";
+            } else {
+                resultText = analysisData.summary || "Analysis complete, result format unclear.";
+            }
+
+        } else {
+            resultText = analysisData.summary || "Analysis complete, but result format unclear.";
+        }
+        resultDiv.textContent = resultText;
+        // --- End Standard Text Result Logic ---
+    }
+
+    // Append result to the container
     container.appendChild(resultDiv);
 
     // Reset button state
@@ -771,3 +846,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return isResponseAsync;
   }
 });
+
