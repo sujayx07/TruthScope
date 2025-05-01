@@ -224,10 +224,10 @@ function injectStyles() {
             right: 5px;
             z-index: 9999;
             padding: 3px 6px;
-            font-size: 10px;
+            font-size: 15px;
             cursor: pointer;
-            background-color: #007bff;
-            color: white;
+            background-color: #e6e6fa;
+            color: black;
             border: none;
             border-radius: 3px;
             opacity: 0.7;
