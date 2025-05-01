@@ -5,10 +5,7 @@ async function ensureBackgroundScriptReady() {
       chrome.runtime.sendMessage({ action: "ping" }, (response) => {
         if (chrome.runtime.lastError) {
           // If background script isn't ready, wait and try again
-          setTimeout(
-            () => ensureBackgroundScriptReady().then(resolve).catch(reject),
-            100
-          );
+          setTimeout(() => ensureBackgroundScriptReady().then(resolve).catch(reject), 100);
         } else {
           resolve();
         }
@@ -40,7 +37,7 @@ async function safeSendMessage(message) {
 setInterval(() => {
   chrome.runtime.sendMessage({ action: "ping" }, (response) => {
     if (chrome.runtime.lastError) {
-      console.warn("Keep-alive failed:", chrome.runtime.lastError);
+      console.warn('Keep-alive failed:', chrome.runtime.lastError);
     }
   });
 }, 10000);
@@ -49,12 +46,12 @@ setInterval(() => {
 function extractArticleContent() {
   try {
     const selectors = [
-      "article",
+      'article',
       '[role="article"]',
-      ".article-content",
-      ".post-content",
-      "main",
-      ".main-content",
+      '.article-content',
+      '.post-content',
+      'main',
+      '.main-content'
     ];
 
     let articleElement = null;
@@ -72,51 +69,49 @@ function extractArticleContent() {
     }
 
     // Extract text content
-    const content = articleElement.innerText.replace(/\s+/g, " ").trim();
+    const content = articleElement.innerText
+      .replace(/\s+/g, ' ')
+      .trim();
 
     return content;
   } catch (error) {
-    console.error("Error extracting content:", error);
-    return "";
+    console.error('Error extracting content:', error);
+    return '';
   }
 }
 
 // Function to extract image and video sources
 function extractMediaSources() {
-  const imageSources = Array.from(document.querySelectorAll("img"))
-    .map((img) => img.src)
-    .filter((src) => src); // Filter out empty src attributes
-  const videoSources = Array.from(document.querySelectorAll("video source")) // More specific selector for video sources
-    .map((source) => source.src)
-    .filter((src) => src);
+  const imageSources = Array.from(document.querySelectorAll('img'))
+                            .map(img => img.src)
+                            .filter(src => src); // Filter out empty src attributes
+  const videoSources = Array.from(document.querySelectorAll('video source')) // More specific selector for video sources
+                            .map(source => source.src)
+                            .filter(src => src);
   // Could also add document.querySelectorAll('video').map(v => v.src) if direct src is used
   return { imageSources, videoSources };
 }
 
 // Function to send text content for analysis
 async function sendTextData(url, content) {
-  if (!content || content.length < 100) {
-    // Basic check for meaningful content
-    console.log("Content too short or empty, skipping text analysis.");
-    return;
+  if (!content || content.length < 100) { // Basic check for meaningful content
+      console.log("Content too short or empty, skipping text analysis.");
+      return;
   }
   try {
-    console.log(
-      "Sending text data for analysis:",
-      content.substring(0, 100) + "..."
-    );
+    console.log("Sending text data for analysis:", content.substring(0, 100) + "...");
     await ensureBackgroundScriptReady();
 
     await safeSendMessage({
       action: "processText", // New action name
       data: {
-        url: url,
-        articleText: content,
-      },
+          url: url,
+          articleText: content
+      }
     });
     console.log("Text data sent successfully.");
   } catch (error) {
-    console.error("Error sending text data:", error);
+    console.error('Error sending text data:', error);
     // Handle error appropriately, maybe retry or notify user
   }
 }
@@ -128,24 +123,15 @@ function applyHighlights(highlights) {
   if (!highlights || highlights.length === 0) return;
 
   console.log("Applying highlights:", highlights);
-  const highlightStyle = "background-color: yellow; color: black;"; // Example style
-  const walker = document.createTreeWalker(
-    document.body,
-    NodeFilter.SHOW_TEXT,
-    null,
-    false
-  );
+  const highlightStyle = 'background-color: yellow; color: black;'; // Example style
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
   let node;
 
   // Store nodes and highlight texts to modify later to avoid issues with walker invalidation
   const nodesToModify = [];
 
-  while ((node = walker.nextNode())) {
-    if (
-      node.parentElement &&
-      node.parentElement.tagName !== "SCRIPT" &&
-      node.parentElement.tagName !== "STYLE"
-    ) {
+  while (node = walker.nextNode()) {
+    if (node.parentElement && node.parentElement.tagName !== 'SCRIPT' && node.parentElement.tagName !== 'STYLE') {
       for (const textToHighlight of highlights) {
         if (node.nodeValue.includes(textToHighlight)) {
           nodesToModify.push({ node, textToHighlight });
@@ -156,54 +142,52 @@ function applyHighlights(highlights) {
 
   // Apply modifications
   nodesToModify.forEach(({ node, textToHighlight }) => {
-    // Check if already highlighted or part of a highlight to prevent nested highlights
-    if (node.parentElement.classList.contains("truthscope-highlight")) {
-      return;
-    }
-
-    const regex = new RegExp(escapeRegExp(textToHighlight), "g");
-    const parent = node.parentNode;
-    let currentNode = node;
-    let match;
-
-    // Process matches within the current text node
-    while ((match = regex.exec(currentNode.nodeValue)) !== null) {
-      const matchText = match[0];
-      const matchIndex = match.index;
-
-      // Split the text node
-      const textBefore = currentNode.nodeValue.substring(0, matchIndex);
-      const textAfter = currentNode.nodeValue.substring(
-        matchIndex + matchText.length
-      );
-
-      // Create new text node for the text before the match
-      if (textBefore) {
-        parent.insertBefore(document.createTextNode(textBefore), currentNode);
+      // Check if already highlighted or part of a highlight to prevent nested highlights
+      if (node.parentElement.classList.contains('truthscope-highlight')) {
+          return;
       }
 
-      // Create the highlight span
-      const span = document.createElement("span");
-      span.className = "truthscope-highlight"; // Add a class for potential removal/styling
-      span.style.cssText = highlightStyle;
-      span.textContent = matchText;
-      parent.insertBefore(span, currentNode);
+      const regex = new RegExp(escapeRegExp(textToHighlight), 'g');
+      const parent = node.parentNode;
+      let currentNode = node;
+      let match;
 
-      // Update the current node to the text after the match
-      currentNode.nodeValue = textAfter;
+      // Process matches within the current text node
+      while ((match = regex.exec(currentNode.nodeValue)) !== null) {
+          const matchText = match[0];
+          const matchIndex = match.index;
 
-      // Adjust regex lastIndex for the next search in the remaining text
-      regex.lastIndex = 0; // Reset lastIndex as nodeValue has changed
+          // Split the text node
+          const textBefore = currentNode.nodeValue.substring(0, matchIndex);
+          const textAfter = currentNode.nodeValue.substring(matchIndex + matchText.length);
 
-      // If no text remaining, break loop for this node
-      if (!textAfter) break;
-    }
+          // Create new text node for the text before the match
+          if (textBefore) {
+              parent.insertBefore(document.createTextNode(textBefore), currentNode);
+          }
+
+          // Create the highlight span
+          const span = document.createElement('span');
+          span.className = 'truthscope-highlight'; // Add a class for potential removal/styling
+          span.style.cssText = highlightStyle;
+          span.textContent = matchText;
+          parent.insertBefore(span, currentNode);
+
+          // Update the current node to the text after the match
+          currentNode.nodeValue = textAfter;
+
+          // Adjust regex lastIndex for the next search in the remaining text
+          regex.lastIndex = 0; // Reset lastIndex as nodeValue has changed
+
+          // If no text remaining, break loop for this node
+          if (!textAfter) break;
+      }
   });
 }
 
 // Helper function to escape regex special characters
 function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
 // Function to check if URL is an article
@@ -213,12 +197,12 @@ function isArticlePage() {
     const excludedPatterns = [
       /\.(jpg|jpeg|png|gif|pdf|doc|docx)$/i,
       /\/(search|login|signup|contact|about|privacy|terms)/i,
-      /\?(q|search)=/i,
+      /\?(q|search)=/i
     ];
 
-    return !excludedPatterns.some((pattern) => pattern.test(url));
+    return !excludedPatterns.some(pattern => pattern.test(url));
   } catch (error) {
-    console.error("Error checking article page:", error);
+    console.error('Error checking article page:', error);
     return false;
   }
 }
@@ -227,9 +211,9 @@ function isArticlePage() {
 
 // Inject CSS for buttons and result boxes
 function injectStyles() {
-  const style = document.createElement("style");
-  // Use backticks directly for template literal
-  style.textContent = `
+    const style = document.createElement('style');
+    // Use backticks directly for template literal
+    style.textContent = `
         .truthscope-media-container {
             position: relative;
             display: inline-block; /* Adjust as needed */
@@ -267,7 +251,7 @@ function injectStyles() {
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
     `;
-  document.head.appendChild(style);
+    document.head.appendChild(style);
 }
 
 // Store analysis results temporarily
@@ -276,190 +260,132 @@ const mediaElementMap = {}; // Key: mediaId, Value: buttonElement
 
 // Function to inject analysis button
 let mediaCounter = 0;
-// Update injectAnalysisButton to handle both images and videos
 function injectAnalysisButton(mediaElement) {
-  const mediaType = mediaElement.tagName.toLowerCase(); // 'img', 'video'
-  let mediaSrc = mediaElement.src;
+    const mediaType = mediaElement.tagName.toLowerCase(); // 'img', 'video', 'audio'
+    let mediaSrc = mediaElement.src;
 
-  if (mediaType === "video" && !mediaSrc) {
-    const sourceElement = mediaElement.querySelector("source");
-    if (sourceElement) {
-      mediaSrc = sourceElement.src;
+    // Extract source for video/audio if direct src is not set
+    if ((mediaType === 'video' || mediaType === 'audio') && !mediaSrc) {
+        const sourceElement = mediaElement.querySelector('source');
+        if (sourceElement) {
+            mediaSrc = sourceElement.src;
+        }
     }
-  }
 
-  if (!mediaSrc) {
-    mediaSrc = mediaElement.currentSrc;
     if (!mediaSrc) {
-      console.log(
-        "Skipping media element without valid src/currentSrc:",
-        mediaElement
-      );
-      return;
+        // Try getting currentSrc for elements where src might not be initially set
+        mediaSrc = mediaElement.currentSrc;
+        if (!mediaSrc) {
+            console.log('Skipping media element without valid src/currentSrc:', mediaElement);
+            return; // Skip elements without a source
+        }
     }
-  }
 
-  const mediaId = `truthscope-media-${mediaCounter++}`;
-  mediaElement.dataset.truthscopeId = mediaId;
+    // Ensure the element has a unique ID for referencing
+    const mediaId = `truthscope-media-${mediaCounter++}`;
+    mediaElement.dataset.truthscopeId = mediaId; // Add data attribute
 
-  let container = mediaElement.parentElement;
-  if (getComputedStyle(container).position === "static") {
-    if (!container.classList.contains("truthscope-media-container")) {
-      const wrapper = document.createElement("div");
-      wrapper.classList.add("truthscope-media-container");
-      mediaElement.parentNode.insertBefore(wrapper, mediaElement);
-      wrapper.appendChild(mediaElement);
-      container = wrapper;
-    }
-  } else {
-    if (!container.classList.contains("truthscope-media-container")) {
-      container.classList.add("truthscope-media-container");
-    }
-  }
-
-  const button = document.createElement("button");
-  button.textContent = "Analyze";
-  button.classList.add("truthscope-analyze-button");
-  button.dataset.mediaId = mediaId;
-
-  button.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    event.preventDefault();
-    console.log(`Analyze button clicked for ${mediaType}: ${mediaSrc}`);
-    button.textContent = "Analyzing...";
-    button.disabled = true;
-
-    try {
-      await ensureBackgroundScriptReady();
-      await safeSendMessage({
-        action: "processMediaItem",
-        data: {
-          mediaUrl: mediaSrc,
-          mediaType: mediaType,
-          mediaId: mediaId,
-        },
-      });
-    } catch (error) {
-      console.error("Error sending media analysis request:", error);
-      displayAnalysisResult(
-        mediaId,
-        `Error sending request: ${error.message || "Unknown error"}`
-      );
-    }
-  });
-
-  container.appendChild(button);
-  mediaElementMap[mediaId] = button;
-}
-
-// Update to render structured data with improved styling
-function displayAnalysisResult(mediaId, analysisData) {
-  const button = mediaElementMap[mediaId];
-  if (!button || !button.parentElement) {
-    console.error(`Could not find container for mediaId: ${mediaId}`);
-    return;
-  }
-
-  // Remove existing result if any
-  const existingResult = button.parentElement.querySelector(
-    `.truthscope-analysis-result[data-media-id="${mediaId}"]`
-  );
-  if (existingResult) {
-    existingResult.remove();
-  }
-
-  const resultDiv = document.createElement("div");
-  resultDiv.classList.add("truthscope-analysis-result");
-  resultDiv.dataset.mediaId = mediaId;
-
-  if (analysisData) {
-    const { aiGeneratedScore, realImageConfidence, extractedText, isAI } =
-      analysisData;
-
-    if (isAI) {
-      resultDiv.innerHTML = `
-                <div style="border: 2px solid red; background-color: #ffe6e6; padding: 10px; border-radius: 5px;">
-                    <strong style="color: red;">AI-Generated Confidence:</strong> ${aiGeneratedScore}%
-                </div>
-            `;
+    // Create a wrapper for positioning if needed (simple check)
+    let container = mediaElement.parentElement;
+    if (getComputedStyle(container).position === 'static') {
+         // Check if parent is already a container or if we need a new one
+        if (!container.classList.contains('truthscope-media-container')) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('truthscope-media-container');
+            mediaElement.parentNode.insertBefore(wrapper, mediaElement);
+            wrapper.appendChild(mediaElement);
+            container = wrapper;
+        }
     } else {
-      resultDiv.innerHTML = `
-                <div style="border: 2px solid green; background-color: #e6ffe6; padding: 10px; border-radius: 5px;">
-                    <strong style="color: green;">Real Image Confidence:</strong> ${realImageConfidence}%
-                </div>
-            `;
+         // Parent is already positioned, add class if not present
+         if (!container.classList.contains('truthscope-media-container')) {
+             container.classList.add('truthscope-media-container');
+         }
     }
 
-    if (extractedText) {
-      resultDiv.innerHTML += `
-                <div style="margin-top: 10px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background-color: #f9f9f9;">
-                    <strong>Extracted Text:</strong>
-                    <p style="font-style: italic;">${extractedText}</p>
-                </div>
-            `;
-    }
-  } else {
-    resultDiv.textContent = "Analysis complete, no summary provided.";
-  }
 
-  button.parentElement.appendChild(resultDiv);
+    const button = document.createElement('button');
+    button.textContent = 'Analyze';
+    button.classList.add('truthscope-analyze-button');
+    button.dataset.mediaId = mediaId; // Link button to media element
 
-  // Reset button state
-  button.textContent = "Analyze";
-  button.disabled = false;
+    button.addEventListener('click', async (event) => {
+        event.stopPropagation(); // Prevent triggering video play/pause etc.
+        event.preventDefault();
+        console.log(`Analyze button clicked for ${mediaType}: ${mediaSrc}`);
+        button.textContent = 'Analyzing...'; // Provide feedback
+        button.disabled = true;
+
+        try {
+            await ensureBackgroundScriptReady();
+            // Use 'processMediaItem' action to match background.js handler
+            // Send mediaId along with other data
+            await safeSendMessage({
+                action: "processMediaItem",
+                data: {
+                    mediaUrl: mediaSrc, // Match expected key in background.js
+                    mediaType: mediaType,
+                    mediaId: mediaId // Send ID to background
+                }
+            });
+            // Result will be displayed via message listener 'displayMediaAnalysis'
+            // The simple response from background.js isn't used here for display
+        } catch (error) {
+            console.error('Error sending media analysis request:', error);
+            // Display error locally if sending fails
+            displayAnalysisResult(mediaId, `Error sending request: ${error.message || 'Unknown error'}`);
+            // Button state is reset within displayAnalysisResult
+        }
+    });
+
+    // Append button to the container (which now wraps the media element)
+    container.appendChild(button);
+    mediaElementMap[mediaId] = button; // Store button reference
 }
 
 // Function to display analysis result
 function displayAnalysisResult(mediaId, resultText) {
-  const button = mediaElementMap[mediaId];
-  if (!button || !button.parentElement) {
-    console.error(`Could not find container for mediaId: ${mediaId}`);
-    return;
-  }
+    const button = mediaElementMap[mediaId];
+    if (!button || !button.parentElement) {
+        console.error(`Could not find container for mediaId: ${mediaId}`);
+        return;
+    }
 
-  // Remove existing result if any
-  const existingResult = button.parentElement.querySelector(
-    `.truthscope-analysis-result[data-media-id="${mediaId}"]`
-  );
-  if (existingResult) {
-    existingResult.remove();
-  }
+    // Remove existing result if any
+    const existingResult = button.parentElement.querySelector(`.truthscope-analysis-result[data-media-id="${mediaId}"]`);
+    if (existingResult) {
+        existingResult.remove();
+    }
 
-  const resultDiv = document.createElement("div");
-  resultDiv.classList.add("truthscope-analysis-result");
-  resultDiv.dataset.mediaId = mediaId; // Link result to media element
-  // <<< Directly display the received text (summary or error) >>>
-  resultDiv.textContent = resultText;
+    const resultDiv = document.createElement('div');
+    resultDiv.classList.add('truthscope-analysis-result');
+    resultDiv.dataset.mediaId = mediaId; // Link result to media element
+    // <<< Directly display the received text (summary or error) >>>
+    resultDiv.textContent = resultText;
 
-  // Append result to the same container as the button
-  button.parentElement.appendChild(resultDiv);
+    // Append result to the same container as the button
+    button.parentElement.appendChild(resultDiv);
 
-  // Reset button state
-  button.textContent = "Analyze";
-  button.disabled = false;
+    // Reset button state
+    button.textContent = 'Analyze';
+    button.disabled = false;
 }
 
 // Function to find and add buttons to media elements
 function addAnalysisButtonsToMedia() {
-  console.log("Searching for media elements to add buttons...");
-  const mediaElements = document.querySelectorAll("img, video, audio");
-  mediaElements.forEach((el) => {
-    // Basic filtering: avoid tiny icons, ensure visibility?
-    if (
-      (el.offsetWidth > 50 && el.offsetHeight > 50) ||
-      el.tagName.toLowerCase() === "audio"
-    ) {
-      // Example filter
-      // Check if button already exists
-      const mediaId = el.dataset.truthscopeId;
-      if (!mediaId || !mediaElementMap[mediaId]) {
-        injectAnalysisButton(el);
-      }
-    }
-  });
-  console.log(
-    `Found ${mediaElements.length} media elements, added buttons where applicable.`
-  );
+    console.log("Searching for media elements to add buttons...");
+    const mediaElements = document.querySelectorAll('img, video, audio');
+    mediaElements.forEach(el => {
+        // Basic filtering: avoid tiny icons, ensure visibility?
+        if (el.offsetWidth > 50 && el.offsetHeight > 50 || el.tagName.toLowerCase() === 'audio') { // Example filter
+             // Check if button already exists
+            const mediaId = el.dataset.truthscopeId;
+            if (!mediaId || !mediaElementMap[mediaId]) {
+                injectAnalysisButton(el);
+            }
+        }
+    });
+    console.log(`Found ${mediaElements.length} media elements, added buttons where applicable.`);
 }
 
 // --- End of Media Analysis Button Injection ---
@@ -470,70 +396,63 @@ async function init() {
     injectStyles(); // Inject CSS styles first
 
     if (!isArticlePage()) {
-      console.log("Not an article page, skipping analysis.");
-      return;
+        console.log("Not an article page, skipping analysis.");
+        return;
     }
 
     const processPage = async () => {
-      const content = extractArticleContent();
-      const mediaSources = extractMediaSources();
-      const url = window.location.href;
+        const content = extractArticleContent();
+        const mediaSources = extractMediaSources();
+        const url = window.location.href;
 
-      // Send text and media data in parallel
-      await Promise.all([
-        sendTextData(url, content),
-        // sendMediaData(url, mediaSources) // Commented out call
-      ]);
+        // Send text and media data in parallel
+        await Promise.all([
+            sendTextData(url, content),
+            // sendMediaData(url, mediaSources) // Commented out call
+        ]);
 
-      // Inject buttons after initial processing
-      addAnalysisButtonsToMedia();
+        // Inject buttons after initial processing
+        addAnalysisButtonsToMedia();
 
-      // Use MutationObserver to detect dynamically added media
-      const observer = new MutationObserver((mutationsList) => {
-        for (const mutation of mutationsList) {
-          if (mutation.type === "childList") {
-            mutation.addedNodes.forEach((node) => {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                // Check if the added node itself is media
-                if (["IMG", "VIDEO", "AUDIO"].includes(node.tagName)) {
-                  if (
-                    (node.offsetWidth > 50 && node.offsetHeight > 50) ||
-                    node.tagName === "AUDIO"
-                  ) {
-                    if (!node.dataset.truthscopeId) {
-                      // Check if not already processed
-                      injectAnalysisButton(node);
-                    }
-                  }
+        // Use MutationObserver to detect dynamically added media
+        const observer = new MutationObserver((mutationsList) => {
+            for(const mutation of mutationsList) {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            // Check if the added node itself is media
+                            if (['IMG', 'VIDEO', 'AUDIO'].includes(node.tagName)) {
+                                if (node.offsetWidth > 50 && node.offsetHeight > 50 || node.tagName === 'AUDIO') {
+                                     if (!node.dataset.truthscopeId) { // Check if not already processed
+                                        injectAnalysisButton(node);
+                                    }
+                                }
+                            }
+                            // Check if the added node contains media elements
+                            node.querySelectorAll('img, video, audio').forEach(el => {
+                                if (el.offsetWidth > 50 && el.offsetHeight > 50 || el.tagName === 'AUDIO') {
+                                     if (!el.dataset.truthscopeId) { // Check if not already processed
+                                        injectAnalysisButton(el);
+                                    }
+                                }
+                            });
+                        }
+                    });
                 }
-                // Check if the added node contains media elements
-                node.querySelectorAll("img, video, audio").forEach((el) => {
-                  if (
-                    (el.offsetWidth > 50 && el.offsetHeight > 50) ||
-                    el.tagName === "AUDIO"
-                  ) {
-                    if (!el.dataset.truthscopeId) {
-                      // Check if not already processed
-                      injectAnalysisButton(el);
-                    }
-                  }
-                });
-              }
-            });
-          }
-        }
-      });
+            }
+        });
 
-      observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, { childList: true, subtree: true });
+
     };
 
-    if (document.readyState === "complete") {
+    if (document.readyState === 'complete') {
       await processPage();
     } else {
-      window.addEventListener("load", processPage);
+      window.addEventListener('load', processPage);
     }
   } catch (error) {
-    console.error("Error in initialization:", error);
+    console.error('Error in initialization:', error);
   }
 }
 
@@ -552,78 +471,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === "applyHighlights") {
-      if (message.highlights && Array.isArray(message.highlights)) {
-        applyHighlights(message.highlights);
-        sendResponse({ status: "highlights applied" });
-      } else {
-        console.error("Invalid highlight data received:", message.highlights);
-        sendResponse({ status: "error", error: "Invalid highlight data" });
-      }
-      return true; // Indicate async response potentially
+        if (message.highlights && Array.isArray(message.highlights)) {
+            applyHighlights(message.highlights);
+            sendResponse({ status: "highlights applied" });
+        } else {
+            console.error("Invalid highlight data received:", message.highlights);
+            sendResponse({ status: "error", error: "Invalid highlight data" });
+        }
+        return true; // Indicate async response potentially
     }
 
     // --- Handle Media Analysis Result ---
     if (message.action === "displayMediaAnalysis") {
-      // <<< Expect summary or error directly >>>
-      const { mediaId, summary, error } = message.data;
+        // <<< Expect summary or error directly >>>
+        const { mediaId, summary, error } = message.data;
 
-      if (mediaId) {
-        if (error) {
-          console.error(`Analysis error for ${mediaId}: ${error}`);
-          displayAnalysisResult(mediaId, `Error: ${error}`);
-        } else if (summary !== undefined) {
-          // Check if summary exists (could be empty string)
-          console.log(`Displaying analysis summary for ${mediaId}:`, summary);
-          displayAnalysisResult(mediaId, summary);
+        if (mediaId) {
+            if (error) {
+                console.error(`Analysis error for ${mediaId}: ${error}`);
+                displayAnalysisResult(mediaId, `Error: ${error}`);
+            } else if (summary !== undefined) { // Check if summary exists (could be empty string)
+                console.log(`Displaying analysis summary for ${mediaId}:`, summary);
+                displayAnalysisResult(mediaId, summary);
+            } else {
+                console.warn(`Received displayMediaAnalysis for ${mediaId} without summary or error.`);
+                displayAnalysisResult(mediaId, "Received empty response.");
+            }
+            sendResponse({ status: "result processed" });
         } else {
-          console.warn(
-            `Received displayMediaAnalysis for ${mediaId} without summary or error.`
-          );
-          displayAnalysisResult(mediaId, "Received empty response.");
+            console.error("Invalid media analysis result data (missing mediaId):", message.data);
+            sendResponse({ status: "error", error: "Invalid result data (missing mediaId)" });
         }
-        sendResponse({ status: "result processed" });
-      } else {
-        console.error(
-          "Invalid media analysis result data (missing mediaId):",
-          message.data
-        );
-        sendResponse({
-          status: "error",
-          error: "Invalid result data (missing mediaId)",
-        });
-      }
-      return true; // Indicate async response potentially
+        return true; // Indicate async response potentially
     }
     // --- End Handle Media Analysis Result ---
 
     // --- Handle Text Analysis Error ---
     if (message.action === "analysisError") {
-      // This specifically catches errors sent from the background script
-      // (e.g., during text analysis fetch failure)
-      console.error(
-        "Received analysis error from background script:",
-        message.error
-      );
-      // Optionally, display a generic error message on the page?
-      // e.g., showTemporaryMessage(`Analysis Error: ${message.error}`);
-      sendResponse({ status: "error processed" });
-      return true; // Indicate async response potentially
+        // This specifically catches errors sent from the background script
+        // (e.g., during text analysis fetch failure)
+        console.error("Received analysis error from background script:", message.error);
+        // Optionally, display a generic error message on the page?
+        // e.g., showTemporaryMessage(`Analysis Error: ${message.error}`);
+        sendResponse({ status: "error processed" });
+        return true; // Indicate async response potentially
     }
     // --- End Handle Text Analysis Error ---
+
+
   } catch (error) {
-    console.error("Error handling message:", error);
+    console.error('Error handling message:', error);
     // Ensure response is sent even in case of unexpected errors
-    if (
-      sendResponse &&
-      typeof sendResponse === "function" &&
-      !sendResponse._called
-    ) {
-      // Basic check if sendResponse is valid and not called
-      try {
-        sendResponse({ status: "error", error: error.message });
-      } catch (e) {
-        console.error("Failed to send error response:", e);
-      }
+    if (sendResponse && typeof sendResponse === 'function' && !sendResponse._called) { // Basic check if sendResponse is valid and not called
+        try {
+            sendResponse({ status: "error", error: error.message });
+        } catch (e) {
+            console.error("Failed to send error response:", e);
+        }
     }
     return true; // Keep channel open
   }
