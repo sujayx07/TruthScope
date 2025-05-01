@@ -21,8 +21,13 @@ SIGHTENGINE_API_USER = os.getenv('SIGHTENGINE_API_USER')
 SIGHTENGINE_API_SECRET = os.getenv('SIGHTENGINE_API_SECRET')
 OCR_SPACE_API_KEY = os.getenv('OCR_SPACE_API_KEY')
 SIGHTENGINE_API_URL = 'https://api.sightengine.com/1.0/check.json'
+SIGHTENGINE_VIDEO_API_URL = 'https://api.sightengine.com/1.0/video/check-sync.json' # Added for video
 OCR_SPACE_API_URL = 'https://api.ocr.space/parse/imageurl'
 GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json'
+# --- Add AI Audio API Config ---
+AI_AUDIO_API_KEY = os.getenv('AI_AUDIO_API_KEY') # Placeholder for audio detection API key
+AI_AUDIO_API_URL = os.getenv('AI_AUDIO_API_URL') # Placeholder for audio detection API endpoint
+# --- Database Config ---
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "news_analysis_db")
@@ -150,6 +155,16 @@ def check_configuration():
         error_msg = f"Missing or placeholder required configuration variables: {', '.join(missing_vars)}"
         logging.critical(error_msg)
         raise ConfigurationError(error_msg)
+
+    # Check optional audio vars separately and log warnings if missing
+    optional_vars = {
+        "AI_AUDIO_API_KEY": AI_AUDIO_API_KEY,
+        "AI_AUDIO_API_URL": AI_AUDIO_API_URL,
+    }
+    missing_optional = [name for name, value in optional_vars.items() if not value or str(value).startswith("YOUR_")]
+    if missing_optional:
+        logging.warning(f"Optional configuration variables missing or placeholders: {', '.join(missing_optional)}. Audio analysis may fail.")
+
     logging.info("Media backend configuration check passed.")
     # Initialize DB pool only after config check passes
     initialize_db_pool()
@@ -225,54 +240,36 @@ def get_or_create_user(google_id: str) -> Dict[str, Any]:
             release_db_connection(conn)
 
 # --- Authentication & Authorization Decorator ---
+# MODIFIED: Skips Google Token validation, uses google_user_id from request body
 def require_auth_and_paid_tier(f):
     """
     Decorator to:
-    1. Authenticate the user via Google OAuth Bearer token (get Google ID).
+    1. Extract google_user_id from the request JSON body.
     2. Look up or create the user in the database based on the Google ID.
     3. Check if the user has the required 'paid' tier.
     Stores user info (db id, tier) in Flask's 'g' object for the request context.
-    Returns 401 (Unauthorized) if token is invalid or user lookup fails.
+    Returns 400 if google_user_id is missing in the request body.
+    Returns 401 (Unauthorized) if user lookup fails (e.g., invalid ID format).
     Returns 403 (Forbidden) if user tier is not 'paid'.
     Returns 500 (Server Error) for database issues during auth.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         endpoint = request.endpoint or "unknown_endpoint"
-        logging.debug(f"@{endpoint}: require_auth_and_paid_tier decorator invoked.")
+        logging.debug(f"@{endpoint}: require_auth_and_paid_tier decorator invoked (modified: no token check).")
 
-        # --- Step 1: Authenticate via OAuth Bearer token ---
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            logging.warning(f"@{endpoint}: Missing or invalid Authorization header.")
-            return jsonify({"error": "Authorization header missing or invalid"}), 401
-        token = auth_header.split(' ', 1)[1]
+        # --- Step 1: Get google_user_id from request body ---
+        data = request.get_json()
+        if not data:
+            logging.warning(f"@{endpoint}: Missing JSON payload for auth.")
+            return jsonify({"error": "Missing JSON payload"}), 400
 
-        # Fetch user info from Google to verify token and get Google ID
-        try:
-            userinfo_resp = requests.get(
-                GOOGLE_USERINFO_URL,
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=API_TIMEOUT_SECONDS
-            )
-            # Check for non-200 status codes (e.g., 401 for invalid token)
-            if userinfo_resp.status_code != 200:
-                logging.warning(f"@{endpoint}: Google userinfo fetch failed with status {userinfo_resp.status_code}. Token might be invalid or expired.")
-                # Provide a generic error message for security
-                return jsonify({"error": "Authentication failed"}), 401
-            userinfo = userinfo_resp.json()
-            google_user_id = userinfo.get('id') # 'sub' is the standard field, but 'id' is often used too
-            if not google_user_id:
-                logging.error(f"@{endpoint}: No 'id' (or 'sub') found in Google userinfo response.")
-                return jsonify({"error": "Authentication failed"}), 401
-        except requests.RequestException as e:
-            logging.error(f"@{endpoint}: Network error fetching Google user info: {e}", exc_info=True)
-            return jsonify({"error": "Authentication failed due to network issue"}), 401
-        except json.JSONDecodeError as e:
-             logging.error(f"@{endpoint}: Failed to decode Google userinfo response: {e}", exc_info=True)
-             return jsonify({"error": "Authentication failed"}), 401
+        google_user_id = data.get('google_user_id')
+        if not google_user_id:
+            logging.warning(f"@{endpoint}: Missing 'google_user_id' in JSON payload for auth.")
+            return jsonify({"error": "Missing 'google_user_id' in JSON payload"}), 400
 
-        logging.info(f"@{endpoint}: Successfully validated token for Google user ID: {google_user_id}")
+        logging.info(f"@{endpoint}: Attempting authentication for Google user ID: {google_user_id}")
 
         # --- Step 2: Authenticate User (Lookup/Create in DB) ---
         try:
@@ -280,7 +277,7 @@ def require_auth_and_paid_tier(f):
             db_user = get_or_create_user(google_user_id)
             g.user = db_user  # Store user info {id, tier} in request context 'g'
             logging.info(f"@{endpoint}: User authenticated successfully. DB User ID: {g.user.get('id')}, Tier: {g.user.get('tier')}")
-        except AuthenticationError as auth_err: # Should not happen if google_id is valid, but handle defensively
+        except AuthenticationError as auth_err: # Handles invalid google_id format from get_or_create_user
             logging.warning(f"@{endpoint}: Authentication failed (get_or_create_user). Error: {auth_err}")
             return jsonify({"error": f"Authentication failed: {auth_err}"}), 401
         except DatabaseError as db_err:
@@ -303,7 +300,9 @@ def require_auth_and_paid_tier(f):
 
         # --- All checks passed, proceed to the actual route function ---
         logging.debug(f"@{endpoint}: Authentication & Authorization successful, proceeding to route function.")
-        return f(*args, **kwargs)
+        # Pass the validated data (including google_user_id) to the wrapped function
+        # This avoids needing to parse JSON again in the route handler
+        return f(data, *args, **kwargs) # Pass 'data'
 
     return decorated_function
 
@@ -376,6 +375,102 @@ def call_ocr_space_api(image_url: str) -> Dict[str, Any]:
         logging.error(f"Failed to decode OCR.space API response JSON: {e}. Response text: {response.text[:200]}")
         raise ApiError("Invalid JSON response from OCR.space API.")
 
+def call_sightengine_video_api(video_url: str) -> Dict[str, Any]:
+    """Calls Sightengine Video API for properties and scam detection."""
+    logging.info(f"Calling Sightengine Video API for URL: {video_url}")
+    if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
+        raise ConfigurationError("Sightengine API credentials not configured.")
+
+    params = {
+        'url': video_url,
+        'models': 'properties,scam', # Check basic properties and scam model
+        'api_user': SIGHTENGINE_API_USER,
+        'api_secret': SIGHTENGINE_API_SECRET
+    }
+    try:
+        # Increase timeout for potentially longer video processing
+        response = requests.get(SIGHTENGINE_VIDEO_API_URL, params=params, timeout=API_TIMEOUT_SECONDS * 2)
+        logging.debug(f"Sightengine Video API response status: {response.status_code}, URL: {response.url}")
+        response.raise_for_status()
+        result = response.json()
+        logging.debug(f"Sightengine Video API raw response: {json.dumps(result)}")
+        return result
+    except requests.exceptions.Timeout:
+        logging.error(f"Sightengine Video API request timed out after {API_TIMEOUT_SECONDS * 2}s for URL: {video_url}")
+        raise ApiError(f"Sightengine Video API request timed out.")
+    except requests.exceptions.RequestException as e:
+        status_code = e.response.status_code if e.response else "N/A"
+        logging.error(f"Sightengine Video API request failed (Status: {status_code}): {e}")
+        raise ApiError(f"Sightengine Video API request failed: {e}")
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to decode Sightengine Video API response JSON: {e}. Response text: {response.text[:200]}")
+        raise ApiError("Invalid JSON response from Sightengine Video API.")
+
+def call_ai_audio_api(audio_url: str) -> Dict[str, Any]:
+    """
+    Placeholder function to call a hypothetical AI audio detection API.
+    This needs to be implemented based on the actual API chosen.
+    """
+    logging.info(f"Calling AI Audio Detection API (Placeholder) for URL: {audio_url}")
+    if not AI_AUDIO_API_KEY or not AI_AUDIO_API_URL or str(AI_AUDIO_API_KEY).startswith("YOUR_") or str(AI_AUDIO_API_URL).startswith("YOUR_"):
+        logging.warning("AI Audio API Key or URL not configured or is a placeholder. Skipping audio analysis.")
+        # Return a structure indicating skipped analysis due to config
+        return {
+            "status": "skipped",
+            "reason": "AI Audio API not configured",
+            "is_likely_ai_generated": None,
+            "confidence": None
+        }
+
+    # --- Replace with actual API call logic ---
+    # Example using a hypothetical API similar to ElevenLabs Speech Classifier
+    headers = {
+        "Authorization": f"Bearer {AI_AUDIO_API_KEY}", # Or appropriate auth method
+        "Content-Type": "application/json"
+        # Add other necessary headers
+    }
+    payload = {
+        "audio_url": audio_url
+        # Add other parameters required by the specific API (e.g., model selection)
+    }
+
+    try:
+        # response = requests.post(AI_AUDIO_API_URL, headers=headers, json=payload, timeout=API_TIMEOUT_SECONDS * 2) # Longer timeout
+        # response.raise_for_status()
+        # result = response.json()
+        # logging.debug(f"AI Audio API raw response: {json.dumps(result)}")
+
+        # --- MOCK RESPONSE (REMOVE WHEN IMPLEMENTING WITH REAL API) ---
+        logging.warning("Using MOCK response for AI Audio API call.")
+        import random
+        is_ai = random.random() > 0.5 # Simulate 50/50 chance
+        confidence = random.random() * 0.5 + 0.5 if is_ai else random.random() * 0.5 # Higher confidence if AI
+        result = {
+            "status": "success", # Assume success from mock API
+            "is_likely_ai_generated": is_ai,
+            "confidence": confidence
+            # Add other fields the real API might return
+        }
+        # --- END MOCK RESPONSE ---
+
+        return result
+
+    except requests.exceptions.Timeout:
+        logging.error(f"AI Audio API request timed out after {API_TIMEOUT_SECONDS * 2}s for URL: {audio_url}")
+        raise ApiError(f"AI Audio API request timed out.")
+    except requests.exceptions.RequestException as e:
+        status_code = e.response.status_code if e.response else "N/A"
+        logging.error(f"AI Audio API request failed (Status: {status_code}): {e}")
+        raise ApiError(f"AI Audio API request failed: {e}")
+    except json.JSONDecodeError as e:
+        # Remove response.text reference as response might not be defined if request failed earlier
+        logging.error(f"Failed to decode AI Audio API response JSON: {e}")
+        raise ApiError("Invalid JSON response from AI Audio API.")
+    except Exception as e: # Catch any other unexpected errors during the API call
+        logging.error(f"Unexpected error calling AI Audio API for {audio_url}: {e}", exc_info=True)
+        raise ApiError(f"Unexpected error during AI audio analysis: {e}")
+    # --- End Replace ---
+
 # --- Analysis Logic ---
 def analyze_image_logic(image_url: str) -> Dict[str, Any]:
     """
@@ -445,8 +540,21 @@ def analyze_image_logic(image_url: str) -> Dict[str, Any]:
              # Don't set ocr_error if API call was successful but no text was found
              # ocr_error = "No text found in image." # Optional: Treat no text as an error?
     elif not ocr_error: # If no specific error caught, but result indicates failure
-        ocr_error = "OCR processing failed or no text could be extracted." # Generic error if specific one wasn't raised
-        logging.warning(f"OCR analysis failed or yielded no text for {image_url}")
+        # Check if the result itself contains an error message (e.g., from OCR.space internal error)
+        if ocr_result and ocr_result.get("IsErroredOnProcessing"):
+             ocr_error_detail = ocr_result.get("ErrorMessage", ["Unknown OCR processing error"])[0]
+             # Check if it's the specific 405 error we want to hide details for
+             if "405" in ocr_error_detail and "Method Not Allowed" in ocr_error_detail:
+                 ocr_error = "Text extraction failed (API issue)." # Generic message
+             else:
+                 ocr_error = f"OCR processing error: {ocr_error_detail}" # Show other processing errors
+        else:
+            ocr_error = "OCR processing failed or no text could be extracted." # Generic error if specific one wasn't raised
+        logging.warning(f"OCR analysis failed or yielded no text for {image_url}: {ocr_error}")
+    # Add specific check for the 405 error caught in the except block
+    elif ocr_error and "405" in ocr_error and "Method Not Allowed" in ocr_error:
+         logging.warning(f"Replacing specific OCR 405 error with generic message for URL: {image_url}")
+         ocr_error = "Text extraction failed (API issue)." # Generic message
 
 
     # --- Combine and Summarize Results ---
@@ -467,7 +575,8 @@ def analyze_image_logic(image_url: str) -> Dict[str, Any]:
         summary_parts.append(f"Detection: {detection_status} (Confidence: {ai_generated_confidence:.2f})")
 
     if ocr_error:
-        summary_parts.append(f"Text Extraction Error: {ocr_error}")
+        # Use the potentially modified (generic) ocr_error message
+        summary_parts.append(f"Text Extraction: {ocr_error}")
     elif parsed_text:
         summary_parts.append(f"Extracted Text: '{parsed_text[:100]}{'...' if len(parsed_text) > 100 else ''}'") # Show snippet
     else:
@@ -479,10 +588,6 @@ def analyze_image_logic(image_url: str) -> Dict[str, Any]:
     # Let's define 'error' status if the primary check (manipulation) fails.
     if manipulation_error:
         final_status = "error"
-        # analysis_summary = f"Analysis failed. Manipulation check error: {manipulation_error}. " + \
-        #                    (f"Text extraction error: {ocr_error}" if ocr_error else \
-        #                     ("Extracted text successfully." if parsed_text else "No text extracted."))
-        # Keep the combined summary_parts message for more detail
 
     # Construct final result object matching expected frontend structure
     result = {
@@ -507,6 +612,178 @@ def analyze_image_logic(image_url: str) -> Dict[str, Any]:
     }
 
     logging.info(f"Image analysis complete for {image_url}. Final Status: {final_status}, Summary: {analysis_summary}")
+    return result
+
+def analyze_video_logic(video_url: str) -> Dict[str, Any]:
+    """
+    Orchestrates video analysis using Sightengine (properties, scam).
+    Note: Sightengine doesn't have a specific 'deepfake' model in standard checks.
+    We check 'scam' which might catch some manipulation patterns.
+    """
+    logging.info(f"Starting video analysis logic for: {video_url}")
+    video_result = None
+    video_error = None
+
+    try:
+        video_result = call_sightengine_video_api(video_url)
+    except (ApiError, ConfigurationError) as e:
+        logging.warning(f"Sightengine video analysis failed for {video_url}: {e}")
+        video_error = str(e)
+    except Exception as e: # Catch unexpected errors during the API call itself
+        logging.error(f"Unexpected error calling Sightengine Video API for {video_url}: {e}", exc_info=True)
+        video_error = "Unexpected server error during video analysis API call."
+
+    # --- Process API Results ---
+    final_status = "success" # Assume success unless error occurs
+    analysis_summary = ""
+    scam_confidence = None # Use None to indicate unreliable/unavailable
+    is_likely_scam = None
+    properties = {}
+
+    if video_result and video_result.get("status") == "success":
+        scam_confidence = video_result.get("scam", {}).get("prob", 0.0) # Default to 0.0 if not found
+        properties = video_result.get("properties", {})
+        # Define a threshold for scam detection (adjust as needed)
+        scam_threshold = 0.5
+        is_likely_scam = scam_confidence >= scam_threshold
+        logging.info(f"Sightengine video result for {video_url}: Scam Prob = {scam_confidence:.4f}, Properties = {properties}")
+
+        # Build summary
+        summary_parts = []
+        duration = properties.get('duration')
+        if duration is not None:
+             summary_parts.append(f"Video Properties: Duration={duration:.2f}s")
+        else:
+             summary_parts.append("Video Properties: Duration=N/A")
+
+        if is_likely_scam:
+            summary_parts.append(f"Potential Scam Detected (Confidence: {scam_confidence:.2f})")
+        else:
+            summary_parts.append(f"No Scam Detected (Confidence: {scam_confidence:.2f})")
+        analysis_summary = ". ".join(summary_parts)
+
+    elif not video_error: # If no specific error caught, but result is not success
+        # Try to get error message from Sightengine response
+        se_error_info = video_result.get("error", {}) if video_result else {}
+        video_error = se_error_info.get("message", "Unknown Sightengine video issue")
+        logging.warning(f"Sightengine video analysis had non-success status for {video_url}: {video_error}")
+
+    # Determine final status based on whether an error occurred
+    if video_error:
+        final_status = "error"
+        analysis_summary = f"Video Analysis Error: {video_error}"
+        # Ensure confidence/flags are None if there was an error
+        scam_confidence = None
+        is_likely_scam = None
+
+    # Construct final result object matching expected frontend structure
+    result = {
+        "status": final_status,
+        # Only include top-level 'error' if the overall status is 'error'
+        "error": analysis_summary if final_status == "error" else None,
+        "analysis_summary": analysis_summary, # Always include the detailed summary
+        "media_analyzed": 1, # Assuming single video analysis per call
+        # Use scam detection as a proxy for manipulation/deepfake for now
+        "manipulated_media_found": 1 if is_likely_scam else 0,
+        "manipulation_confidence": scam_confidence, # Provide confidence if check succeeded
+        "analyzed_media": [ # Array structure
+            {
+                "url": video_url,
+                "type": "video",
+                "is_likely_manipulated": is_likely_scam, # Map scam result
+                "ai_confidence": scam_confidence, # Map scam confidence (using same value for now)
+                "properties": properties,
+                "analysis_error": video_error # Include specific error for this media item
+            }
+        ]
+    }
+
+    logging.info(f"Video analysis complete for {video_url}. Final Status: {final_status}, Summary: {analysis_summary}")
+    return result
+
+def analyze_audio_logic(audio_url: str) -> Dict[str, Any]:
+    """
+    Orchestrates audio analysis using a hypothetical AI audio detection API.
+    """
+    logging.info(f"Starting audio analysis logic for: {audio_url}")
+    audio_result = None
+    audio_error = None
+
+    try:
+        audio_result = call_ai_audio_api(audio_url)
+    except (ApiError, ConfigurationError) as e:
+        logging.warning(f"AI audio analysis failed for {audio_url}: {e}")
+        audio_error = str(e)
+    except Exception as e: # Catch unexpected errors during the API call itself
+        logging.error(f"Unexpected error calling AI Audio API for {audio_url}: {e}", exc_info=True)
+        audio_error = "Unexpected server error during audio analysis API call."
+
+    # --- Process API Results ---
+    final_status = "success" # Assume success unless error or skipped
+    analysis_summary = ""
+    ai_confidence = None # Use None for unreliable/unavailable
+    is_likely_ai = None
+
+    if audio_result and audio_result.get("status") == "success":
+        ai_confidence = audio_result.get("confidence") # Could be None if API doesn't provide it
+        is_likely_ai = audio_result.get("is_likely_ai_generated") # Could be None
+        logging.info(f"AI audio result for {audio_url}: Likely AI = {is_likely_ai}, Confidence = {ai_confidence}")
+
+        # Build summary based on available results
+        if is_likely_ai is not None:
+             detection_status = 'Likely AI Generated' if is_likely_ai else 'Likely Human Generated'
+             if ai_confidence is not None:
+                 analysis_summary = f"Audio Detection: {detection_status} (Confidence: {ai_confidence:.2f})"
+             else:
+                 analysis_summary = f"Audio Detection: {detection_status} (Confidence: N/A)"
+        else:
+             analysis_summary = "Audio analysis result inconclusive (detection status unknown)."
+             # Consider setting status to 'warning' or similar if result is incomplete
+             # final_status = "warning"
+
+    elif audio_result and audio_result.get("status") == "skipped":
+        # Handle case where API call was skipped due to config
+        final_status = "skipped" # Use a specific status
+        audio_error = audio_result.get("reason", "Skipped due to configuration")
+        analysis_summary = f"Audio Analysis Skipped: {audio_error}"
+        logging.warning(f"Audio analysis skipped for {audio_url}: {audio_error}")
+
+    elif not audio_error: # If no specific error caught, but result indicates failure (e.g., status != success/skipped)
+        # Attempt to get error from response if possible, otherwise generic
+        api_error_msg = audio_result.get("error", "Unknown AI audio API issue") if audio_result else "Unknown AI audio API issue"
+        audio_error = api_error_msg
+        logging.warning(f"AI audio analysis had non-success status for {audio_url}: {audio_error}")
+
+    # Determine final status based on whether an error occurred (but don't overwrite 'skipped')
+    if audio_error and final_status != "skipped":
+        final_status = "error"
+        analysis_summary = f"Audio Analysis Error: {audio_error}"
+        # Ensure confidence/flags are None if there was an error
+        ai_confidence = None
+        is_likely_ai = None
+
+    # Construct final result object
+    result = {
+        "status": final_status,
+        # Include top-level 'error' only if status is 'error' (not 'skipped')
+        "error": analysis_summary if final_status == "error" else None,
+        "analysis_summary": analysis_summary, # Always include the detailed summary
+        "media_analyzed": 1,
+        # Use AI generated status as proxy for manipulation
+        "manipulated_media_found": 1 if is_likely_ai else 0,
+        "manipulation_confidence": ai_confidence, # Use AI confidence
+        "analyzed_media": [
+            {
+                "url": audio_url,
+                "type": "audio",
+                "is_likely_manipulated": is_likely_ai, # Map AI result
+                "ai_confidence": ai_confidence, # Map AI confidence
+                # Include specific error only if status is 'error'
+                "analysis_error": audio_error if final_status == "error" else None
+            }
+        ]
+    }
+    logging.info(f"Audio analysis complete for {audio_url}. Final Status: {final_status}, Summary: {analysis_summary}")
     return result
 
 # --- Flask Endpoints ---
@@ -555,42 +832,75 @@ def handle_analyze_image():
             "analysis_summary": "Analysis failed due to unexpected server error."
             }), 500
 
-# --- Placeholder Endpoints for Video/Audio ---
 @app.route('/analyze_video', methods=['POST'])
-def handle_analyze_video():
-    """Placeholder endpoint for video analysis."""
+@require_auth_and_paid_tier # Apply the decorator
+def handle_analyze_video(data): # Decorator now passes validated JSON data
+    """Endpoint to handle video analysis requests. Requires paid tier."""
     endpoint = request.endpoint
-
-    data = request.get_json()
-    if not data: return jsonify({"error": "Missing JSON payload"}), 400
+    # Data is already parsed and contains 'google_user_id' due to decorator
     media_url = data.get('media_url')
-    if not media_url: return jsonify({"error": "Missing 'media_url'"}), 400
+    # Basic check, though decorator should ensure 'data' exists
+    if not media_url:
+        # This case should ideally not be reached if decorator works correctly
+        logging.error(f"@{endpoint}: Missing 'media_url' after decorator ran. Payload: {data}")
+        return jsonify({"error": "Missing 'media_url'"}), 400
 
-    logging.info(f"@{endpoint}: Placeholder video analysis called for URL: {media_url}")
-    # Return 501 Not Implemented
-    return jsonify({
-        "status": "error",
-        "error": "Video analysis is not yet implemented.",
-        "analysis_summary": "Video analysis unavailable."
-        }), 501 # 501 Not Implemented is appropriate here
+    # g.user is available from the decorator
+    logging.info(f"@{endpoint}: Processing video analysis for URL: {media_url} by User ID: {g.user.get('id')}")
+
+    try:
+        # Perform the analysis using the dedicated logic function
+        result = analyze_video_logic(media_url)
+
+        # Determine appropriate HTTP status code based on analysis outcome
+        # 200 OK: Success, even if analysis found issues (e.g., scam detected) or was skipped
+        # 500 Internal Server Error: Only if the analysis logic itself failed unexpectedly
+        status_code = 500 if result.get("status") == "error" else 200
+
+        logging.info(f"@{endpoint}: Video analysis finished for {media_url}. Returning HTTP status {status_code}.")
+        return jsonify(result), status_code
+    except Exception as e:
+        # Catch truly unexpected errors *within* the endpoint handler/logic call
+        logging.error(f"@{endpoint}: Unexpected error during video analysis logic execution for {media_url}: {e}", exc_info=True)
+        # Return a generic 500 error response
+        return jsonify({
+            "status": "error",
+            "error": "An unexpected server error occurred during video analysis.",
+            "analysis_summary": "Analysis failed due to unexpected server error."
+            }), 500
 
 @app.route('/analyze_audio', methods=['POST'])
-def handle_analyze_audio():
-    """Placeholder endpoint for audio analysis."""
+@require_auth_and_paid_tier # Apply the decorator
+def handle_analyze_audio(data): # Decorator now passes validated JSON data
+    """Endpoint to handle audio analysis requests. Requires paid tier."""
     endpoint = request.endpoint
-
-    data = request.get_json()
-    if not data: return jsonify({"error": "Missing JSON payload"}), 400
     media_url = data.get('media_url')
-    if not media_url: return jsonify({"error": "Missing 'media_url'"}), 400
+    if not media_url:
+        logging.error(f"@{endpoint}: Missing 'media_url' after decorator ran. Payload: {data}")
+        return jsonify({"error": "Missing 'media_url'"}), 400
 
-    logging.info(f"@{endpoint}: Placeholder audio analysis called for URL: {media_url}")
-    # Return 501 Not Implemented
-    return jsonify({
-        "status": "error",
-        "error": "Audio analysis is not yet implemented.",
-        "analysis_summary": "Audio analysis unavailable."
-        }), 501 # 501 Not Implemented
+    logging.info(f"@{endpoint}: Processing audio analysis for URL: {media_url} by User ID: {g.user.get('id')}")
+
+    try:
+        # Perform the analysis using the dedicated logic function
+        result = analyze_audio_logic(media_url)
+
+        # Determine HTTP status code
+        # 200 OK: Success, skipped, or analysis completed (even if AI detected)
+        # 500 Internal Server Error: Only if the analysis logic failed unexpectedly
+        status_code = 500 if result.get("status") == "error" else 200
+
+        logging.info(f"@{endpoint}: Audio analysis finished for {media_url}. Returning HTTP status {status_code}.")
+        return jsonify(result), status_code
+    except Exception as e:
+        # Catch truly unexpected errors *within* the endpoint handler/logic call
+        logging.error(f"@{endpoint}: Unexpected error during audio analysis logic execution for {media_url}: {e}", exc_info=True)
+        # Return a generic 500 error response
+        return jsonify({
+            "status": "error",
+            "error": "An unexpected server error occurred during audio analysis.",
+            "analysis_summary": "Analysis failed due to unexpected server error."
+            }), 500
 
 # --- Health Check / Index Route ---
 @app.route('/')
@@ -629,15 +939,6 @@ def teardown_db(exception=None):
     if exception:
          # Log any exceptions that caused the context teardown
          logging.error(f"App context teardown triggered by exception: {exception}", exc_info=True)
-
-# Graceful shutdown handler (optional, depends on deployment)
-# import signal
-# def signal_handler(sig, frame):
-#     print('Received signal to shutdown.')
-#     shutdown_server()
-#     exit(0)
-# signal.signal(signal.SIGINT, signal_handler) # Handle Ctrl+C
-# signal.signal(signal.SIGTERM, signal_handler) # Handle termination signal
 
 def shutdown_server():
     """Closes the database pool gracefully."""

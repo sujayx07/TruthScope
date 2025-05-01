@@ -450,3 +450,59 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Media analysis techniques
 - Google Fact Check API
 - Chrome Extension APIs
+
+# TruthScope Extension - Frontend
+
+This directory contains the frontend code for the TruthScope Chrome Extension. It provides the user interface (popup, side panel) for interacting with the media analysis features.
+
+## Features
+
+*   **Popup Interface (`popup.html`, `popup.js`):**
+    *   Displays the main extension interface when the icon is clicked.
+    *   Allows users to sign in with Google (though authentication logic primarily resides in the backend).
+    *   Shows user status (e.g., signed in, tier).
+    *   Provides buttons/controls to trigger media analysis.
+*   **Content Script (`content.js`):**
+    *   Runs in the context of web pages visited by the user.
+    *   Detects media elements (images, potentially video/audio in the future) on the page.
+    *   Adds context menu items or overlays to trigger analysis for specific media.
+    *   Communicates with the background script.
+*   **Background Script (`background.js`):**
+    *   Acts as the central controller for the extension.
+    *   Listens for messages from the popup and content scripts.
+    *   Manages communication with the backend Flask server.
+    *   Handles user authentication state (storing tokens/IDs securely).
+    *   Makes API calls to the backend endpoints (`/analyze_image`, `/analyze_video`, `/analyze_audio`).
+*   **Side Panel (`sidepanel.html`, `sidepanel.js`):**
+    *   Provides a persistent panel (if configured in `manifest.json`) to display detailed analysis results or history.
+*   **Manifest (`manifest.json`):**
+    *   Defines the extension's properties, permissions, scripts, and UI components.
+    *   Specifies necessary permissions (e.g., `storage`, `activeTab`, `contextMenus`, access to backend URL).
+
+## Setup & Loading the Extension
+
+1.  **Backend Running:** Ensure the backend server (`extension/backend/check_media.py`) is running and accessible (e.g., at `http://localhost:3000`). The frontend needs to communicate with it.
+2.  **Open Chrome Extensions:** Navigate to `chrome://extensions` in your Chrome browser.
+3.  **Enable Developer Mode:** Toggle the "Developer mode" switch in the top-right corner.
+4.  **Load Unpacked:**
+    *   Click the "Load unpacked" button.
+    *   Navigate to and select the `extension/frontend` directory within your project.
+5.  **Pin the Extension:** Find the TruthScope extension in your toolbar (you might need to click the puzzle piece icon) and pin it for easy access.
+
+## Development
+
+*   **Making Changes:** After modifying any frontend file (HTML, CSS, JS), you need to reload the extension in `chrome://extensions` by clicking the refresh icon for the TruthScope extension.
+*   **Debugging:**
+    *   **Popup:** Right-click the extension icon and select "Inspect popup".
+    *   **Background Script:** Go to `chrome://extensions`, find TruthScope, and click the "service worker" link.
+    *   **Content Script:** Open the developer tools (F12) on a webpage where the content script is active and check the Console tab (make sure the context is set to the page, not the extension).
+    *   **Side Panel:** If using the side panel, right-click within the panel and select "Inspect".
+*   **Backend URL:** Ensure the `fetch` calls in `background.js` (or wherever API calls are made) point to the correct URL where your backend server is running.
+
+## Key Files
+
+*   `manifest.json`: Core configuration file.
+*   `popup.html`/`popup.js`: UI and logic for the browser action popup.
+*   `content.js`: Interacts with web page content.
+*   `background.js`: Event handling and backend communication.
+*   `sidepanel.html`/`sidepanel.js`: UI and logic for the side panel (if enabled).
