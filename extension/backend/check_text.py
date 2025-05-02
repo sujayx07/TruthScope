@@ -9,10 +9,11 @@ from urllib.parse import urlparse, quote
 from dotenv import load_dotenv # For .env file support
 from google import genai
 from google.genai import types
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Union # For improved type hinting
 from flask import Flask, request, jsonify, g # Added g for request context
 from functools import wraps # Added for decorators
+from gdeltdoc import GdeltDoc, Filters
 
 # --- Google Auth --- NEW
 from google.oauth2 import id_token
@@ -58,6 +59,10 @@ API_TIMEOUT_SECONDS = 15 # Increased timeout slightly
 FACT_CHECK_CLAIM_LIMIT = 3 # Max claims to check per article
 FACT_CHECK_QUERY_SIZE_LIMIT = 500 # Max characters per claim query
 GOOGLE_SEARCH_RESULT_LIMIT = 5
+
+# GDELT Constants
+GDELT_DAYS_WINDOW = 7  # Days back to search GDELT
+GDELT_RESULT_LIMIT = 5  # Max articles to return from GDELT
 
 # Gemini Constants
 GEMINI_MODEL_NAME = "gemini-1.5-flash-latest" # Or "gemini-1.5-pro-latest"
@@ -378,55 +383,35 @@ def check_database_for_url(url: str) -> str:
             release_db_connection(conn)
 
 
-def search_google_news(query: str) -> List[Dict[str, str]]:
+def search_gdelt_context(query: str) -> List[Dict[str, str]]:
     """
-    Searches Google for recent news related to the query using the ZenRows API.
-    Returns a list of search result dictionaries (title, link, snippet).
-    Raises ApiError on request or parsing issues.
+    Searches recent news related to the query using the GDELT Context 2.0 API.
+    Returns a list of {title, link, snippet} dictionaries, limited to GDELT_RESULT_LIMIT.
     """
-    logging.info(f"Tool Call: search_google_news(query='{query[:50]}...')")
-    if not ZENROWS_API_KEY or ZENROWS_API_KEY.startswith("YOUR_"):
-        raise ConfigurationError("ZenRows API Key not configured.")
-
-    encoded_query = quote(query)
-    api_url = f'{ZENROWS_BASE_URL}{encoded_query}'
-    params = {'apikey': ZENROWS_API_KEY}
-
+    logging.info(f"Tool Call: search_gdelt_context(query='{query[:50]}...')")
+    endpoint = "https://api.gdeltproject.org/api/v2/context/context"
+    params = {
+        "query": query,
+        "mode": "context",
+        "timespan": f"{min(GDELT_DAYS_WINDOW, 3)*24}H",
+        "maxrecords": GDELT_RESULT_LIMIT,
+        "format": "json",
+        "isquote": 1
+    }
+    results: List[Dict[str, str]] = []
     try:
-        response = requests.get(api_url, params=params, timeout=API_TIMEOUT_SECONDS)
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        response = requests.get(endpoint, params=params, timeout=API_TIMEOUT_SECONDS)
+        response.raise_for_status()
         data = response.json()
-
-        results = []
-        raw_results = data.get('organic_results', [])
-        if not isinstance(raw_results, list):
-            logging.warning("ZenRows 'organic_results' is not a list.")
-            raw_results = []
-
-        for item in raw_results[:GOOGLE_SEARCH_RESULT_LIMIT]:
-             if item and isinstance(item, dict):
-                 results.append({
-                     "title": str(item.get("title", "N/A")),
-                     "link": str(item.get("url", "#")),
-                     "snippet": str(item.get("description", "N/A"))
-                 })
-             else:
-                 logging.warning(f"Skipping invalid item in ZenRows results: {item}")
-
-        logging.info(f"Found {len(results)} Google news results for query.")
-        return results
-    except requests.exceptions.Timeout:
-        logging.error(f"Timeout calling ZenRows API for query: {query}")
-        raise ApiError(f"ZenRows API request timed out after {API_TIMEOUT_SECONDS}s.")
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error calling ZenRows API: {e}")
-        raise ApiError(f"ZenRows API request failed: {e}")
-    except json.JSONDecodeError as e:
-        logging.error(f"Error decoding ZenRows API response: {e}")
-        raise ApiError("Invalid JSON response from ZenRows API.")
+        sentences = data.get("sentences", []) or data.get("articles", [])
+        for item in sentences:
+            title = str(item.get("title", ""))
+            link = str(item.get("url", item.get("documentidentifier", "")))
+            snippet = str(item.get("sentence", ""))
+            results.append({"title": title, "link": link, "snippet": snippet})
     except Exception as e:
-        logging.error(f"Unexpected error in search_google_news: {e}")
-        raise ApiError(f"Unexpected error during Google search: {e}")
+        logging.error(f"Error querying GDELT Context API for query '{query}': {e}")
+    return results
 
 
 def fact_check_claims(claims: List[str]) -> List[Dict[str, str]]:
@@ -550,7 +535,7 @@ try:
 
     agent_tools = [
         check_database_for_url,
-        search_google_news,
+        search_gdelt_context,
         fact_check_claims,
     ]
 
@@ -603,12 +588,8 @@ try:
     Select up to {FACT_CHECK_CLAIM_LIMIT} central or suspicious claims.
 
     News Corroboration
-
-    Call search_google_news(query) using the article title or main entities.
-
-    Filter results by domain whitelist (major news publishers, reputable outlets). Discard links to GitHub, personal blogs, Medium, docs sites, white-papers, forums. Note internally if corroboration is found or lacking.
-
-    If no valid news results remain, do not include "example.com" or placeholders; simply omit search results.
+    **MUST CALL** search_gdelt_context(query) using the GDELT Context 2.0 API to retrieve up to 5 related news snippets.
+    Filter and merge these results into the fact_check list as needed.
 
     Fact-Check Specific Claims
 
@@ -651,10 +632,10 @@ try:
 
     All successful fact_check_claims entries, each mapped to {source,title,url,claim:review_rating_or_claim}.
 
-    All filtered search_google_news results, each as:
+    All filtered search_gdelt_context results, each as:
 
     {
-      "source": "Google News Search",
+      "source": "GDELT News Search",
       "title": "<result.title>",
       "url": "<result.link>",
       "claim": "<result.snippet>"
@@ -687,7 +668,7 @@ try:
             "claim":"False" // Or the specific rating like "False"
           },
           {
-            "source":"Google News Search",
+            "source":"GDELT News Search",
             "title":"Health experts debunk microchip rumor",
             "url":"https://news.example.com/debunk",
             "claim":"Experts confirm vaccines do not contain microchips"
@@ -701,6 +682,7 @@ try:
     Do not return partial results or intermediate states.
     If you encounter any errors, return an error message in the same format as above.
     Do not include any other text or explanations.
+    Recieve text in multiple languages, but always return the final JSON in English.
     '''
 
 
@@ -754,6 +736,23 @@ def analyze_article(url: str, article_text: str) -> Dict[str, Any]:
 
                 analysis_result = json.loads(final_text)
                 logging.info(f"Analysis successful for URL: {url}")
+
+                # Ensure GDELT top news results are included if not already
+                try:
+                    # Use the first 200 chars of the article as query
+                    gdelt_query = article_text[:200]
+                    gdelt_entries = search_gdelt_context(gdelt_query)
+                    formatted_gdelt = [
+                        {"source": "GDELT News Search", "title": entry.get("title", ""), "url": entry.get("link", ""), "claim": entry.get("snippet", "")}  
+                        for entry in gdelt_entries
+                    ]
+                    # Merge into fact_check list
+                    text_res = analysis_result.get("textResult", {})
+                    text_res.setdefault("fact_check", []).extend(formatted_gdelt)
+                    analysis_result["textResult"] = text_res
+                except Exception as e:
+                    logging.error(f"Error fetching GDELT news context: {e}")
+
                 try:
                     update_analysis_results(url, analysis_result)
                 except DatabaseError as db_err:

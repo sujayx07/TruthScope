@@ -11,3 +11,6 @@ google-api-python-client
 protobuf
 # Add Gemini library
 google-generativeai
+
+# GDELT API client
+pypi:gdeltdoc
