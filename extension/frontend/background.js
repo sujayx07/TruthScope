@@ -219,244 +219,185 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // --- Modified: processText ---
+  // --- Modified: processText (Keep using fresh token) ---
   if (message.action === "processText" && tabId) {
     console.log(`📝 [Tab ${tabId}] Received text for analysis:`, message.data.url);
     const { url, articleText } = message.data;
 
-    // *** Auth Check ***
-    // Make the check more explicit
-    if (!currentAuthToken) {
-        console.warn(`[Tab ${tabId}] Auth check failed: currentAuthToken is missing. Skipping text analysis.`);
-        sendResponse({ status: "error", error: "User not signed in." });
-        chrome.tabs.sendMessage(tabId, { action: "analysisError", error: "Authentication required." })
-            .catch(err => console.log(`[Tab ${tabId}] Error sending auth error to content script:`, err));
-        return false;
-    }
-    if (!userProfile || !userProfile.id) {
-         console.warn(`[Tab ${tabId}] Auth check failed: userProfile or userProfile.id is missing. Profile: ${JSON.stringify(userProfile)}. Skipping text analysis.`);
-         // Don't sign out here, just prevent the call
-         sendResponse({ status: "error", error: "User profile information is missing." });
-         chrome.tabs.sendMessage(tabId, { action: "analysisError", error: "User profile missing. Please try signing out and back in." })
-             .catch(err => console.log(`[Tab ${tabId}] Error sending profile error to content script:`, err));
-         return false;
-    }
-
+    // Basic content validation (Unchanged)
     if (!articleText || articleText.length < 25) {
         console.warn(`[Tab ${tabId}] Text content too short, skipping analysis.`);
         sendResponse({ status: "skipped", reason: "Content too short" });
         return false;
     }
     const textToSend = articleText.slice(0, 3000);
-    const userIdToSend = userProfile.id; // Store in a variable to be sure
 
-    // Log state right before fetch
-    console.log(`[Tab ${tabId}] Making text analysis request. Token exists: ${!!currentAuthToken}, User ID: ${userIdToSend}`);
-
-    fetch(TEXT_ANALYSIS_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Authorization": `Bearer ${currentAuthToken}` // *** Add Auth Header ***
-      },
-      body: JSON.stringify({
-          url: url,
-          article_text: textToSend,
-          google_user_id: userIdToSend // Send the stored ID
-      })
-    })
-      .then(async response => {
-        console.log(`[Tab ${tabId}] Text Analysis API Response Status:`, response.status);
-        // *** Handle Auth Error from Backend ***
-        if (response.status === 401 || response.status === 403) {
-            console.error(`[Tab ${tabId}] Backend returned ${response.status}. Token might be invalid or expired.`);
-            await handleSignOut(); // Sign out the user
-            throw new Error(`Authentication failed (${response.status}). Please sign in again.`);
+    // *** Get Token Before Fetch ***
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (chrome.runtime.lastError || !token) {
+            console.warn(`[Tab ${tabId}] Auth token fetch failed (non-interactive) before text analysis. Error: ${chrome.runtime.lastError?.message}`);
+            // If token fetch fails non-interactively, user needs to sign in.
+            // We might already be signed out, but ensure state reflects it.
+            if (currentAuthToken) handleSignOut(); // Clear state if we thought we were signed in
+            sendResponse({ status: "error", error: "Authentication required. Please sign in." });
+            chrome.tabs.sendMessage(tabId, { action: "analysisError", error: "Authentication required. Please sign in." })
+                .catch(err => console.log(`[Tab ${tabId}] Error sending auth error to content script:`, err));
+            return; // Stop processing
         }
-        if (!response.ok) {
-          // ... (existing error handling for non-auth errors) ...
-          const errorText = await response.text();
-          let errorDetail = errorText;
-          try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error || errorText; } catch(e) {}
-          throw new Error(`HTTP ${response.status}: ${errorDetail}`);
-        }
-        return response.json();
-      })
-      .then(result => {
-        // ... (existing success handling logic) ...
-        console.log(`[Tab ${tabId}] Backend analysis result:`, result);
 
-        if (result && result.error) {
-            console.error(`[Tab ${tabId}] Backend returned an error: ${result.error}`);
-            if (!processingState[tabId]) processingState[tabId] = {};
-            processingState[tabId].textResult = { error: result.error };
-            chrome.tabs.sendMessage(tabId, {
-                action: "analysisError",
-                error: result.error
-            }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisError to content script:`, err));
-            // Don't sendResponse here, let the final catch handle it or send success below
-        } else if (result && result.textResult) {
-            if (!processingState[tabId]) processingState[tabId] = {};
-            processingState[tabId].textResult = result.textResult;
+        // *** Token obtained successfully, proceed with fetch ***
+        console.log(`[Tab ${tabId}] Making text analysis request with fresh token.`);
 
-            chrome.tabs.sendMessage(tabId, {
-                action: "analysisComplete",
-                result: result.textResult
-            }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisComplete to content script:`, err));
-
-            if (result.textResult.highlights && result.textResult.highlights.length > 0) {
-                chrome.tabs.sendMessage(tabId, {
-                    action: "applyHighlights",
-                    highlights: result.textResult.highlights
-                }).catch(err => console.log(`[Tab ${tabId}] Error sending highlights to content script:`, err));
+        fetch(TEXT_ANALYSIS_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": `Bearer ${token}` // *** Use the freshly obtained token ***
+          },
+          body: JSON.stringify({
+              url: url,
+              article_text: textToSend
+          })
+        })
+        .then(async response => {
+            console.log(`[Tab ${tabId}] Text Analysis API Response Status:`, response.status);
+            if (response.status === 401 || response.status === 403) {
+                console.error(`[Tab ${tabId}] Backend returned ${response.status}. Token likely invalid/expired even after refresh.`);
+                await handleSignOut(); // Sign out the user
+                throw new Error(`Authentication failed (${response.status}). Please sign in again.`);
             }
-
-            chrome.runtime.sendMessage({
-                action: "analysisComplete",
-                tabId: tabId,
-                result: result.textResult
-            }).catch(err => console.log(`Error notifying UI components of analysis completion:`, err));
-
-            sendResponse({ status: "success", resultReceived: true });
-            return; // Exit early on success
-        } else {
-             console.error(`[Tab ${tabId}] Backend response did not contain expected 'textResult'. Response:`, result);
-             if (!processingState[tabId]) processingState[tabId] = {};
-             processingState[tabId].textResult = { error: "Invalid response format from backend." };
-             chrome.tabs.sendMessage(tabId, {
-                 action: "analysisError",
-                 error: "Invalid response format from backend."
-             }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisError (invalid format) to content script:`, err));
-             // Let the catch block handle sending the error response
-             throw new Error("Invalid response format from backend.");
-        }
-      })
-      .catch(error => {
-        // ... (existing catch block logic) ...
-        console.error(`[Tab ${tabId}] ❌ Error during text analysis fetch:`, error);
-        if (!processingState[tabId]) processingState[tabId] = {};
-        // Ensure error message is stored
-        const errorMessage = error.message || "Unknown text analysis error";
-        processingState[tabId].textResult = { error: errorMessage };
-
-        chrome.tabs.sendMessage(tabId, {
-            action: "analysisError",
-            error: errorMessage
-        }).catch(err => console.log(`[Tab ${tabId}] Error sending analysisError to content script:`, err));
-
-        sendResponse({ status: "error", error: errorMessage });
-      });
+            if (!response.ok) {
+              const errorText = await response.text();
+              let errorDetail = errorText;
+              try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error || errorText; } catch(e) {}
+              throw new Error(`HTTP ${response.status}: ${errorDetail}`);
+            }
+            return response.json();
+        })
+        .then(result => {
+            // ... (existing success handling logic - unchanged) ...
+            console.log(`[Tab ${tabId}] Backend analysis result:`, result);
+            if (result && result.error) {
+                console.error(`[Tab ${tabId}] Backend returned an error: ${result.error}`);
+                if (!processingState[tabId]) processingState[tabId] = {};
+                processingState[tabId].textResult = { error: result.error };
+                chrome.tabs.sendMessage(tabId, { action: "analysisError", error: result.error })
+                    .catch(err => console.log(`[Tab ${tabId}] Error sending analysisError to content script:`, err));
+            } else if (result && result.textResult) {
+                if (!processingState[tabId]) processingState[tabId] = {};
+                processingState[tabId].textResult = result.textResult;
+                chrome.tabs.sendMessage(tabId, { action: "analysisComplete", result: result.textResult })
+                    .catch(err => console.log(`[Tab ${tabId}] Error sending analysisComplete to content script:`, err));
+                if (result.textResult.highlights && result.textResult.highlights.length > 0) {
+                    chrome.tabs.sendMessage(tabId, { action: "applyHighlights", highlights: result.textResult.highlights })
+                        .catch(err => console.log(`[Tab ${tabId}] Error sending highlights to content script:`, err));
+                }
+                chrome.runtime.sendMessage({ action: "analysisComplete", tabId: tabId, result: result.textResult })
+                    .catch(err => console.log(`Error notifying UI components of analysis completion:`, err));
+                sendResponse({ status: "success", resultReceived: true });
+                return;
+            } else {
+                 console.error(`[Tab ${tabId}] Backend response did not contain expected 'textResult'. Response:`, result);
+                 if (!processingState[tabId]) processingState[tabId] = {};
+                 processingState[tabId].textResult = { error: "Invalid response format from backend." };
+                 chrome.tabs.sendMessage(tabId, { action: "analysisError", error: "Invalid response format from backend." })
+                     .catch(err => console.log(`[Tab ${tabId}] Error sending analysisError (invalid format) to content script:`, err));
+                 throw new Error("Invalid response format from backend.");
+            }
+        })
+        .catch(error => {
+            // ... (existing catch block logic - unchanged) ...
+            console.error(`[Tab ${tabId}] ❌ Error during text analysis fetch:`, error);
+            if (!processingState[tabId]) processingState[tabId] = {};
+            const errorMessage = error.message || "Unknown text analysis error";
+            processingState[tabId].textResult = { error: errorMessage };
+            chrome.tabs.sendMessage(tabId, { action: "analysisError", error: errorMessage })
+                .catch(err => console.log(`[Tab ${tabId}] Error sending analysisError to content script:`, err));
+            sendResponse({ status: "error", error: errorMessage });
+        });
+    }); // End of chrome.identity.getAuthToken callback
 
     return true; // Indicate async response
   }
 
-  // --- Modified: processMediaItem ---
+  // --- Modified: processMediaItem (Revert to using stored currentAuthToken) ---
   if (message.action === "processMediaItem" && tabId) {
       const { mediaUrl, mediaType, mediaId } = message.data;
       console.log(`🖼️ [Tab ${tabId}] Received ${mediaType} for analysis: ${mediaUrl} (ID: ${mediaId})`);
 
-      // *** Auth Check ***
-      // Make the check more explicit
+      // *** Check stored token first ***
       if (!currentAuthToken) {
-          console.warn(`[Tab ${tabId}] Auth check failed: currentAuthToken is missing. Skipping media analysis for ${mediaUrl}.`);
-          chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, error: "Authentication required." }})
+          console.warn(`[Tab ${tabId}] No auth token available for media analysis for ${mediaUrl}. User needs to sign in.`);
+          chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, error: "Authentication required. Please sign in." }})
               .catch(err => console.log(`[Tab ${tabId}] Error sending media auth error to content script:`, err));
-          sendResponse({ status: "error", error: "User not signed in." });
-          return false;
+          sendResponse({ status: "error", error: "Authentication required. Please sign in." });
+          return false; // Stop processing
       }
-       if (!userProfile || !userProfile.id) {
-           console.warn(`[Tab ${tabId}] Auth check failed: userProfile or userProfile.id is missing. Profile: ${JSON.stringify(userProfile)}. Skipping media analysis for ${mediaUrl}.`);
-           chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, error: "User profile missing. Please try signing out and back in." }})
-               .catch(err => console.log(`[Tab ${tabId}] Error sending profile error to content script:`, err));
-           sendResponse({ status: "error", error: "User profile information is missing." });
-           return false;
-       }
 
-      // ... (existing validation for mediaUrl, mediaType, mediaId) ...
+      // Basic validation (Unchanged)
       if (!mediaUrl || !mediaType || !mediaId) {
+          // ... (existing validation logic) ...
           console.warn(`[Tab ${tabId}] Invalid media item data received.`);
-          chrome.tabs.sendMessage(tabId, {
-              action: "displayMediaAnalysis",
-              data: { mediaId: mediaId || 'unknown', error: "Invalid media data received by background script." }
-          }).catch(err => console.log(`[Tab ${tabId}] Error sending invalid data error to content script:`, err));
+          chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId || 'unknown', error: "Invalid media data received by background script." }})
+              .catch(err => console.log(`[Tab ${tabId}] Error sending invalid data error to content script:`, err));
           sendResponse({ status: "error", error: "Invalid media data" });
           return false;
       }
 
       let targetUrl;
       switch (mediaType.toLowerCase()) {
+          // ... (existing switch logic) ...
           case 'img': case 'image': targetUrl = IMAGE_ANALYSIS_URL; break;
           case 'video': targetUrl = VIDEO_ANALYSIS_URL; break;
           case 'audio': targetUrl = AUDIO_ANALYSIS_URL; break;
           default:
               console.warn(`[Tab ${tabId}] Unsupported media type: ${mediaType}. Cannot analyze.`);
-              chrome.tabs.sendMessage(tabId, {
-                  action: "displayMediaAnalysis",
-                  data: { mediaId: mediaId, error: `Unsupported media type: ${mediaType}` }
-              }).catch(err => console.log(`[Tab ${tabId}] Error sending unsupported type error to content script:`, err));
+              chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, error: `Unsupported media type: ${mediaType}` }})
+                  .catch(err => console.log(`[Tab ${tabId}] Error sending unsupported type error to content script:`, err));
               sendResponse({ status: "error", error: `Unsupported media type: ${mediaType}` });
               return false;
       }
 
-      const userIdToSendMedia = userProfile.id; // Store in a variable
-      // *** ADDED LOGGING ***
-      console.log(`[Tab ${tabId}] Preparing media analysis request. User ID to send: '${userIdToSendMedia}' (Type: ${typeof userIdToSendMedia})`);
-      // *** END ADDED LOGGING ***
+      const requestBody = { media_url: mediaUrl };
+      const requestBodyString = JSON.stringify(requestBody);
 
-      const requestBody = {
-          media_url: mediaUrl,
-          google_user_id: userIdToSendMedia // Send the stored ID
-      };
-      const requestBodyString = JSON.stringify(requestBody); // Stringify for logging
-
-      // Log state right before fetch, including the body
-      console.log(`[Tab ${tabId}] Making media analysis request for ${mediaType}. Token exists: ${!!currentAuthToken}, User ID: ${userIdToSendMedia}`);
-      console.log(`[Tab ${tabId}] Request Body: ${requestBodyString}`); // Log the stringified body
+      // *** Proceed with fetch using stored currentAuthToken ***
+      console.log(`[Tab ${tabId}] Making media analysis request for ${mediaType} (${mediaUrl}) using stored token.`);
+      console.log(`[Tab ${tabId}] Request Body: ${requestBodyString}`);
 
       fetch(targetUrl, {
           method: "POST",
           headers: {
               "Content-Type": "application/json",
               "Accept": "application/json",
-              "Authorization": `Bearer ${currentAuthToken}` // Add Auth header for media requests too
+              "Authorization": `Bearer ${currentAuthToken}` // *** Use the stored token ***
           },
-          body: requestBodyString // Send the stringified body
+          body: requestBodyString
       })
       .then(async response => {
           console.log(`[Tab ${tabId}] Media Item Analysis API Response Status (${mediaUrl}):`, response.status);
-
-          // *** Modified Auth/Authz Error Handling ***
-          if (response.status === 401) { // Unauthorized (bad token/ID)
-              console.error(`[Tab ${tabId}] Backend returned 401 for media ${mediaUrl}. Token might be invalid or expired.`);
+          if (response.status === 401) {
+              console.error(`[Tab ${tabId}] Backend returned 401 for media ${mediaUrl}. Stored token likely invalid/expired.`);
               await handleSignOut(); // Sign out the user
               throw new Error(`Authentication failed (401). Please sign in again.`);
-          } else if (response.status === 403) { // Forbidden (e.g., tier restriction)
+          } else if (response.status === 403) {
+              // ... (existing 403 handling) ...
               console.warn(`[Tab ${tabId}] Backend returned 403 for media ${mediaUrl}. Likely tier restriction.`);
               let errorDetail = "Authorization failed (403).";
-              try {
-                  const errorJson = await response.json(); // Try to get specific error from backend
-                  errorDetail = errorJson.error || errorDetail;
-              } catch (e) {
-                  console.error(`[Tab ${tabId}] Could not parse JSON from 403 response body:`, e);
-              }
-              // DO NOT sign out. Throw the specific error.
+              try { const errorJson = await response.json(); errorDetail = errorJson.error || errorDetail; } catch (e) {}
               throw new Error(errorDetail);
           }
-          // *** End Modified Auth/Authz Error Handling ***
-
-          if (!response.ok) { // Handle other non-2xx errors
+          if (!response.ok) {
+              // ... (existing !response.ok handling) ...
               const errorText = await response.text();
               let errorDetail = errorText;
-              try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error || errorText; } catch(e) {} 
-              // Use status and message for better error reporting in catch block
+              try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error || errorText; } catch(e) {}
               throw { status: response.status, message: `HTTP ${response.status}: ${errorDetail}` };
           }
-          // If response is OK (2xx), proceed to parse
           const responseText = await response.text();
-          console.log(`[Tab ${tabId}] Media Response Text:`, responseText);
-          // Add check for empty response text before parsing
           if (!responseText) {
+              // ... (existing empty response handling) ...
               console.error(`[Tab ${tabId}] Received empty response body from media analysis for ${mediaUrl}.`);
               throw new Error("Received empty response from media analysis backend.");
           }
@@ -464,7 +405,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return result;
       })
       .then(result => {
-          // ... (existing success handling logic for media item) ...
+          // ... (existing success handling logic for media item - unchanged) ...
           const responseData = {
               mediaId: mediaId,
               mediaType: mediaType,
@@ -482,19 +423,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: responseData })
               .then(() => console.log(`[Tab ${tabId}] Successfully sent displayMediaAnalysis for mediaId ${mediaId}`))
               .catch(err => console.error(`[Tab ${tabId}] Error sending displayMediaAnalysis for mediaId ${mediaId}:`, err));
-          // Notify other UI components (optional)
           chrome.runtime.sendMessage({ action: "mediaAnalysisItemComplete", tabId: tabId, mediaUrl: mediaUrl, result: responseData })
               .catch(err => console.log(`Error notifying UI of media item completion:`, err));
           sendResponse({ status: "success", resultReceived: true });
       })
       .catch(error => {
-          // ... (existing catch block logic for media item) ...
+          // ... (existing catch block logic for media item - unchanged) ...
           const errorMessage = error.message || "Unknown media analysis error";
           console.error(`[Tab ${tabId}] ❌ Error during media item analysis fetch for ${mediaUrl}. Full Error:`, error);
-          chrome.tabs.sendMessage(tabId, {
-              action: "displayMediaAnalysis",
-              data: { mediaId: mediaId, mediaType: mediaType, status: 'error', error: errorMessage }
-          }).catch(err => console.log(`[Tab ${tabId}] Error sending displayMediaAnalysis (error) to content script:`, err));
+          chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, mediaType: mediaType, status: 'error', error: errorMessage }})
+              .catch(err => console.log(`[Tab ${tabId}] Error sending displayMediaAnalysis (error) to content script:`, err));
           sendResponse({ status: "error", error: errorMessage });
       });
 
@@ -516,8 +454,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (processingState[targetTabId]) {
           sendResponse({ status: "found", data: processingState[targetTabId] });
       } else {
-          // If no processing state exists yet, maybe trigger analysis if appropriate?
-          // For now, just report not found.
           console.log(`[Tab ${targetTabId}] No processing state found.`);
           sendResponse({ status: "not_found" });
       }

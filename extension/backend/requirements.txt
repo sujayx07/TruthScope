@@ -1,8 +1,9 @@
-python-dotenv
-google-generativeai
+Flask
+Flask-Cors
 psycopg2-binary
 requests
-Flask
+python-dotenv
+google-auth
 
 gunicorn
-google-auth
+google-generativeai

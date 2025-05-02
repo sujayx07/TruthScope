@@ -1,56 +1,153 @@
+import unittest
 import requests
 import json
+import os
 
-# Define the server URL
-server_url = "http://localhost:5000/analyze"
+# --- Configuration ---
+# Replace with your actual backend URLs if different
+TEXT_BACKEND_URL = os.getenv("TEXT_BACKEND_URL", "http://localhost:5000")
+MEDIA_BACKEND_URL = os.getenv("MEDIA_BACKEND_URL", "http://localhost:3000")
 
-# Sample article for testing - using a BBC article about climate change
-demo_url = "https://timesofindia.indiatimes.com/world/europe/massive-blackout-hits-spain-portugal-france-trains-flights-affected-millions-impacted/articleshow/120697350.cms"
-demo_article_text = """
-NEW DELHI: On the eve of Kolkata Knight Riders' crucial Indian Premier League match against Delhi Capitals at the Arun Jaitley Stadium, pacer Harshit Rana admitted on Monday that the defending champions deeply miss the presence of former mentor Gautam Gambhir in their dugout.
-Also visit: IPL Live Score
-Rana, who had a breakout IPL 2024 season under Gambhir's guidance — taking 19 wickets in KKR's title-winning run — revealed how much the 'Guru' meant to his development. Thanks to Gambhir's mentorship, Harshit has since made his India debut across all three formats and emerged as one of the country's brightest young pace prospects.
-Go Beyond The Boundary with our YouTube channel. SUBSCRIBE NOW!
-Asked if KKR missed Gambhir, Harshit said diplomatically: "I won't say that because the composition of our support staff is basically the same (from last year). (Abhishek) Nayar Bhai has also come back. Chandu Sir, (Dwayne) Bravo are all good. But yes, there is this thrill factor which I miss a little. I am not talking about anyone else."
-Who's that IPL player?
-Rana then added: "You also know that Gambhir has an aura, the way he comes and takes the team along. I was just talking about that."
-Poll
-Do you think KKR is missing Gautam Gambhir's mentorship this season?
-Maybe a littleNot sureNo, they have a strong support staffYes, definitely
-Abhishek Nayar, who returned to KKR's coaching group after a stint with the Indian team, is seen by Rana as a major positive. "There will be a lot of changes now that he (Nayar) has come back. He is a very smart mind and reads situations very well," Rana said.
-With just seven points so far this season, KKR are struggling at seventh in the table, and Rana's candid comments reflect a side trying to rediscover the magic touch that once propelled them to glory.
-author
-About the Author
-TOI Sports Desk
-The TOI Sports Desk excels in a myriad of roles that capture the essence of live sporting events and deliver compelling content to readers worldwide. From running live blogs for India and non-India cricket matches to global spectacles featuring Indian talents, like the Chess World Cup final featuring Praggnanandhaa and the Badminton World Championships semifinal featuring HS Prannoy, our live coverage extends to all mega sporting events. We extensively cover events like the Olympics, Asian Games, Cricket World Cups, FIFA World Cups, and more. The desk is also adept at writing comprehensive match reports and insightful post-match commentary, complemented by stats-based articles that provide an in-depth analysis of player performances and team dynamics. We track news wires for key stories, conduct exclusive player interviews in both text and video formats, and file content from print editions and reporters. We keep track of all viral stories, trending topics and produce our own copies on the subjects. We deliver accurate, engaging, and up-to-the-minute sports content, round the clock.Read More
+# !!! IMPORTANT: Replace with a valid Google Access Token for testing !!!
+# You can obtain one by signing in with a test Google account in your extension
+# and copying the token from the network requests (e.g., in browser dev tools).
+# This token will expire, so you might need to refresh it periodically.
+TEST_ACCESS_TOKEN = "YOUR_TEST_ACCESS_TOKEN"
 
+# Sample data for testing
+SAMPLE_TEXT_URL = "https://www.bbc.com/news/science-environment-60000000" # Example URL
+SAMPLE_TEXT_CONTENT = "This is sample article text about a recent event."
+SAMPLE_IMAGE_URL = "https://via.placeholder.com/150.png" # Example image URL
+SAMPLE_VIDEO_URL = "https://www.w3schools.com/html/mov_bbb.mp4" # Example video URL
+SAMPLE_AUDIO_URL = "https://www.w3schools.com/html/horse.mp3" # Example audio URL
 
-"""
+class BackendTests(unittest.TestCase):
 
-# Prepare the request payload
-payload = {
-    "url": demo_url,
-    "article_text": demo_article_text
-}
+    def setUp(self):
+        """Set up test variables."""
+        self.text_analyze_url = f"{TEXT_BACKEND_URL}/analyze"
+        self.media_image_url = f"{MEDIA_BACKEND_URL}/analyze_image"
+        self.media_video_url = f"{MEDIA_BACKEND_URL}/analyze_video"
+        self.media_audio_url = f"{MEDIA_BACKEND_URL}/analyze_audio"
 
-print("Sending test request to backend server...")
-try:
-    # Send the request
-    response = requests.post(server_url, json=payload)
-    
-    # Check if the request was successful
-    if response.status_code == 200:
-        result = response.json()
-        print("\n=== Analysis Successful ===")
-        print(f"Status Code: {response.status_code}")
-        print("\nAnalysis Result:")
-        print(json.dumps(result, indent=2))  # Pretty print the JSON response
-    else:
-        print(f"\n=== Analysis Failed ===")
-        print(f"Status Code: {response.status_code}")
-        print(f"Error: {response.text}")
-        
-except Exception as e:
-    print(f"\n=== Request Error ===")
-    print(f"Error: {e}")
-    print("\nPlease make sure the backend server is running at http://localhost:5000")
+        if TEST_ACCESS_TOKEN == "YOUR_TEST_ACCESS_TOKEN":
+            print("\nWARNING: TEST_ACCESS_TOKEN is not set. Authentication tests will likely fail.")
+            self.headers = {"Content-Type": "application/json"}
+        else:
+            self.headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {TEST_ACCESS_TOKEN}"
+            }
+
+    def test_01_analyze_text_success(self):
+        """Test successful text analysis request.
+        Requires a valid TEST_ACCESS_TOKEN.
+        """
+        print(f"\nTesting POST {self.text_analyze_url} (Text Analysis - Expect Success)")
+        payload = {
+            "url": SAMPLE_TEXT_URL,
+            "article_text": SAMPLE_TEXT_CONTENT
+        }
+        try:
+            response = requests.post(self.text_analyze_url, headers=self.headers, json=payload, timeout=30)
+            print(f"Status Code: {response.status_code}")
+            # Expect 200 OK for successful analysis
+            self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}. Response: {response.text}")
+            result = response.json()
+            self.assertIn("textResult", result, "Response JSON should contain 'textResult'")
+            print("Result snippet:", json.dumps(result.get("textResult", {}).get("reasoning", "N/A"), indent=2))
+        except requests.exceptions.RequestException as e:
+            self.fail(f"Request failed: {e}")
+
+    def test_02_analyze_text_auth_fail(self):
+        """Test text analysis request with missing/invalid auth header."""
+        print(f"\nTesting POST {self.text_analyze_url} (Text Analysis - Expect 401 Auth Error)")
+        payload = {
+            "url": SAMPLE_TEXT_URL,
+            "article_text": SAMPLE_TEXT_CONTENT
+        }
+        # Use headers without Authorization
+        invalid_headers = {"Content-Type": "application/json"}
+        try:
+            response = requests.post(self.text_analyze_url, headers=invalid_headers, json=payload, timeout=10)
+            print(f"Status Code: {response.status_code}")
+            # Expect 401 Unauthorized
+            self.assertEqual(response.status_code, 401, f"Expected 401 Unauthorized, got {response.status_code}. Response: {response.text}")
+            result = response.json()
+            self.assertIn("error", result, "Error response should contain 'error' key")
+            print("Error message:", result.get("error"))
+        except requests.exceptions.RequestException as e:
+            self.fail(f"Request failed: {e}")
+
+    def test_03_analyze_image_success(self):
+        """Test successful image analysis request (currently public, no auth needed)."""
+        print(f"\nTesting POST {self.media_image_url} (Image Analysis - Expect Success)")
+        payload = {"media_url": SAMPLE_IMAGE_URL}
+        # Image endpoint might not require auth currently, use basic headers
+        basic_headers = {"Content-Type": "application/json"}
+        try:
+            response = requests.post(self.media_image_url, headers=basic_headers, json=payload, timeout=20)
+            print(f"Status Code: {response.status_code}")
+            # Expect 200 OK
+            self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}. Response: {response.text}")
+            result = response.json()
+            self.assertIn("status", result, "Response JSON should contain 'status'")
+            print("Result snippet:", json.dumps(result.get("analysis_summary", "N/A"), indent=2))
+        except requests.exceptions.RequestException as e:
+            self.fail(f"Request failed: {e}")
+
+    def test_04_analyze_video_auth_or_success(self):
+        """Test video analysis request.
+        Expects 200 OK if token is valid AND user has 'paid' tier.
+        Expects 403 Forbidden if token is valid but user tier is 'free'.
+        Expects 401 Unauthorized if token is invalid/missing.
+        """
+        print(f"\nTesting POST {self.media_video_url} (Video Analysis - Expect 200, 401, or 403)")
+        payload = {"media_url": SAMPLE_VIDEO_URL}
+        try:
+            response = requests.post(self.media_video_url, headers=self.headers, json=payload, timeout=45) # Longer timeout for video
+            print(f"Status Code: {response.status_code}")
+            # Check for expected outcomes
+            self.assertIn(response.status_code, [200, 401, 403],
+                          f"Expected 200, 401, or 403, but got {response.status_code}. Response: {response.text}")
+            result = response.json()
+            if response.status_code == 200:
+                self.assertIn("status", result, "Successful response JSON should contain 'status'")
+                print("Result snippet:", json.dumps(result.get("analysis_summary", "N/A"), indent=2))
+            else: # 401 or 403
+                self.assertIn("error", result, "Error response should contain 'error' key")
+                print("Error message:", result.get("error"))
+        except requests.exceptions.RequestException as e:
+            self.fail(f"Request failed: {e}")
+
+    def test_05_analyze_audio_auth_or_success(self):
+        """Test audio analysis request.
+        Expects 200 OK if token is valid AND user has 'paid' tier.
+        Expects 403 Forbidden if token is valid but user tier is 'free'.
+        Expects 401 Unauthorized if token is invalid/missing.
+        """
+        print(f"\nTesting POST {self.media_audio_url} (Audio Analysis - Expect 200, 401, or 403)")
+        payload = {"media_url": SAMPLE_AUDIO_URL}
+        try:
+            response = requests.post(self.media_audio_url, headers=self.headers, json=payload, timeout=30)
+            print(f"Status Code: {response.status_code}")
+            # Check for expected outcomes
+            self.assertIn(response.status_code, [200, 401, 403],
+                          f"Expected 200, 401, or 403, but got {response.status_code}. Response: {response.text}")
+            result = response.json()
+            if response.status_code == 200:
+                self.assertIn("status", result, "Successful response JSON should contain 'status'")
+                print("Result snippet:", json.dumps(result.get("analysis_summary", "N/A"), indent=2))
+            else: # 401 or 403
+                self.assertIn("error", result, "Error response should contain 'error' key")
+                print("Error message:", result.get("error"))
+        except requests.exceptions.RequestException as e:
+            self.fail(f"Request failed: {e}")
+
+if __name__ == '__main__':
+    print("Starting backend tests...")
+    print(f"Text Backend URL: {TEXT_BACKEND_URL}")
+    print(f"Media Backend URL: {MEDIA_BACKEND_URL}")
+    print("Make sure both backend servers (check_text.py and check_media.py) are running.")
+    print("Also ensure TEST_ACCESS_TOKEN is set correctly in test_backend.py for authenticated tests.")
+    unittest.main()

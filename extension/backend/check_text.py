@@ -11,7 +11,12 @@ from google import genai
 from google.genai import types
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Union # For improved type hinting
-from flask import Flask, request, jsonify # Added Flask imports
+from flask import Flask, request, jsonify, g # Added g for request context
+from functools import wraps # Added for decorators
+
+# --- Google Auth --- NEW
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 # --- Load Environment Variables ---
 load_dotenv() # Load variables from .env file if it exists
@@ -26,6 +31,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_FACT_CHECK_API_KEY = os.getenv("GOOGLE_FACT_CHECK_API_KEY")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY") # Note: Currently unused in functions, but checked
 ZENROWS_API_KEY = os.getenv("ZENROWS_API_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") # <-- NEW: Needed for token verification
 
 # Database Credentials (Loaded from environment)
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -68,6 +74,10 @@ class DatabaseError(Exception):
 
 class ApiError(Exception):
     """Custom exception for external API errors."""
+    pass
+
+class AuthenticationError(Exception): # <-- NEW
+    """Custom exception for authentication/token verification errors."""
     pass
 
 # --- Database Connection Pool ---
@@ -142,6 +152,7 @@ def check_configuration():
         "DB_NAME": DB_NAME,
         "DB_USER": DB_USER,
         "DB_PASSWORD": DB_PASSWORD,
+        "GOOGLE_CLIENT_ID": GOOGLE_CLIENT_ID, # <-- NEW CHECK
     }
     missing_vars = [name for name, value in required_vars.items() if not value or value.startswith("YOUR_")]
     if missing_vars:
@@ -165,13 +176,61 @@ def extract_domain_from_url(url: str) -> Optional[str]:
         logging.warning(f"Error parsing URL '{url}': {e}")
         return None
 
-def get_or_create_user(google_id: str) -> Dict[str, Any]:
+# --- NEW: Google Token Verification --- (Using UserInfo endpoint)
+def verify_google_access_token(access_token: str) -> Dict[str, Any]:
+    """Verifies a Google access token by calling the userinfo endpoint.
+
+    Args:
+        access_token: The access token received from the client.
+
+    Returns:
+        A dictionary containing user info (e.g., 'sub', 'email') if valid.
+
+    Raises:
+        AuthenticationError: If the token is invalid, expired, or the request fails.
+    """
+    logging.debug("Verifying Google access token...")
+    userinfo_url = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json'
+    try:
+        response = requests.get(
+            userinfo_url,
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=API_TIMEOUT_SECONDS
+        )
+        response.raise_for_status() # Raises HTTPError for 4xx/5xx
+        user_info = response.json()
+        if not user_info or 'id' not in user_info: # 'id' is the 'sub' field in v1
+            raise AuthenticationError("Invalid user info received from Google.")
+        # Rename 'id' to 'sub' for consistency if needed, or just use 'id'
+        user_info['sub'] = user_info.get('id')
+        logging.info(f"Access token verified successfully for user sub: {user_info.get('sub')}")
+        return user_info
+    except requests.exceptions.Timeout:
+        logging.error("Timeout calling Google UserInfo endpoint.")
+        raise AuthenticationError("Timeout during token verification.")
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code
+        logging.warning(f"Google UserInfo request failed with status {status_code}. Token likely invalid or expired.")
+        raise AuthenticationError(f"Token verification failed (HTTP {status_code}).")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Network error calling Google UserInfo endpoint: {e}")
+        raise AuthenticationError("Network error during token verification.")
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to decode Google UserInfo response: {e}")
+        raise AuthenticationError("Invalid response from token verification endpoint.")
+    except Exception as e:
+        logging.error(f"Unexpected error during token verification: {e}", exc_info=True)
+        raise AuthenticationError(f"Unexpected error during token verification: {e}")
+
+# --- Modified: get_or_create_user ---
+def get_or_create_user(google_id: str, email: Optional[str] = None) -> Dict[str, Any]:
     """
     Retrieves user details (id, tier) from the database based on Google ID.
-    If the user doesn't exist, creates a new user with the default tier.
+    If the user doesn't exist, creates a new user with the default tier and provided email.
 
     Args:
         google_id: The user's unique Google ID ('sub').
+        email: The user's email address (optional).
 
     Returns:
         A dictionary containing the user's internal ID and tier.
@@ -179,11 +238,12 @@ def get_or_create_user(google_id: str) -> Dict[str, Any]:
     Raises:
         DatabaseError: If database operations fail.
         ValueError: If google_id is empty.
+        AuthenticationError: If google_id is invalid (reusing for simplicity).
     """
-    logging.debug(f"Getting or creating user for google_id: {google_id}")
-    if not google_id: # Add check for missing ID
+    logging.debug(f"Getting or creating user for google_id: {google_id}, email: {email}")
+    if not google_id:
         logging.error("Attempted to get/create user with empty google_id.")
-        raise ValueError("Google User ID cannot be empty.")
+        raise AuthenticationError("Google User ID cannot be empty.") # Use AuthError
     conn = None
     try:
         conn = get_db_connection()
@@ -196,16 +256,14 @@ def get_or_create_user(google_id: str) -> Dict[str, Any]:
                 logging.info(f"Found existing user (ID: {user_id}, Tier: {tier}) for google_id: {google_id}")
                 return {"id": user_id, "tier": tier}
             else:
-                # If creating, email might be desirable but not strictly required if google_id is unique
-                logging.info(f"Creating new user for google_id: {google_id}")
+                logging.info(f"Creating new user for google_id: {google_id} with email: {email}")
                 cursor.execute(
                     f"""
                     INSERT INTO {USERS_TABLE} (google_id, email, tier, created_at)
                     VALUES (%s, %s, %s, NOW())
                     RETURNING id, tier;
                     """,
-                    # Pass None for email if not available/required by DB schema
-                    (google_id, None, DEFAULT_USER_TIER)
+                    (google_id, email, DEFAULT_USER_TIER)
                 )
                 new_user_record = cursor.fetchone()
                 if new_user_record:
@@ -214,15 +272,74 @@ def get_or_create_user(google_id: str) -> Dict[str, Any]:
                     return {"id": user_id, "tier": tier}
                 else:
                     raise DatabaseError("Failed to retrieve new user details after insertion.")
-    except (psycopg2.Error, DatabaseError, ValueError) as e: # Added ValueError
+    except (psycopg2.Error, DatabaseError) as e:
         logging.error(f"Database error getting/creating user for google_id {google_id}: {e}")
-        # Reraise as DatabaseError for consistent handling upstream, unless it was ValueError
-        if isinstance(e, ValueError):
-            raise e
         raise DatabaseError(f"DB error accessing user data: {e}")
+    except AuthenticationError as ae: # Catch and re-raise AuthError
+        raise ae
+    except Exception as e: # Catch other unexpected errors
+        logging.error(f"Unexpected error in get_or_create_user for {google_id}: {e}", exc_info=True)
+        raise DatabaseError(f"Unexpected error accessing user data: {e}")
     finally:
         if conn:
             release_db_connection(conn)
+
+# --- NEW: Authentication Decorator --- (Can be shared with check_media.py)
+def require_auth(f):
+    """
+    Decorator to verify Google access token from Authorization header,
+    fetch/create user, and store user info in Flask's 'g'.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        endpoint = request.endpoint or "unknown_endpoint"
+        logging.debug(f"@{endpoint}: require_auth decorator invoked.")
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            logging.warning(f"@{endpoint}: Missing or invalid Authorization header.")
+            return jsonify({"error": "Authorization header missing or invalid"}), 401
+
+        access_token = auth_header.split('Bearer ')[1]
+        if not access_token:
+            logging.warning(f"@{endpoint}: Empty token in Authorization header.")
+            return jsonify({"error": "Empty token provided"}), 401
+
+        try:
+            # Step 1: Verify Access Token via Google UserInfo
+            user_info = verify_google_access_token(access_token)
+            google_id = user_info.get('sub') # or user_info.get('id')
+            email = user_info.get('email')
+
+            if not google_id:
+                 # Should not happen if verify_google_access_token is correct
+                 raise AuthenticationError("Verified token info missing user ID ('sub').")
+
+            # Step 2: Get/Create User in DB
+            db_user = get_or_create_user(google_id=google_id, email=email)
+
+            # Step 3: Store user info in request context 'g'
+            g.user = {
+                "id": db_user.get('id'),
+                "tier": db_user.get('tier'),
+                "google_id": google_id,
+                "email": email
+            }
+            logging.info(f"@{endpoint}: User authenticated successfully. DB User ID: {g.user['id']}, Tier: {g.user['tier']}")
+
+            # Proceed to the actual route function
+            return f(*args, **kwargs)
+
+        except AuthenticationError as auth_err:
+            logging.warning(f"@{endpoint}: Authentication failed. Error: {auth_err}")
+            return jsonify({"error": f"Authentication failed: {auth_err}"}), 401
+        except DatabaseError as db_err:
+            logging.error(f"@{endpoint}: Database error during user processing. Error: {db_err}", exc_info=True)
+            return jsonify({"error": f"Server error during user processing: {db_err}"}), 500
+        except Exception as e:
+             logging.error(f"@{endpoint}: Unexpected error during authentication/user processing. Error: {e}", exc_info=True)
+             return jsonify({"error": "Unexpected server error during authentication"}), 500
+
+    return decorated_function
 
 # --- Agent Tool Functions ---
 
@@ -673,12 +790,13 @@ try:
 except ConfigurationError as e:
     logging.critical(f"CRITICAL CONFIGURATION ERROR: {e}. Flask app might not function correctly.")
 
+# --- Modified: /analyze Endpoint ---
 @app.route('/analyze', methods=['POST'])
+@require_auth # Apply the new authentication decorator
 def handle_analyze():
     """Flask endpoint to handle article analysis requests."""
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return jsonify({"error": "Authorization header missing or invalid"}), 401
+    # Authentication is handled by the @require_auth decorator
+    # g.user is now available with verified user info
 
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
@@ -686,35 +804,26 @@ def handle_analyze():
     data = request.get_json()
     url = data.get('url')
     article_text = data.get('article_text')
-    google_user_id = data.get('google_user_id') # Get user ID from payload
 
     if not url or not article_text:
         return jsonify({"error": "Missing 'url' or 'article_text' in JSON payload"}), 400
 
-    if not google_user_id: # Check if user ID is present
-         logging.warning("Request received without google_user_id in payload.")
-         return jsonify({"error": "Missing 'google_user_id' in JSON payload"}), 401 # Treat as unauthorized
-
-    try:
-        # Get user info from DB using the provided ID
-        db_user = get_or_create_user(google_user_id)
-        logging.info(f"Request authorized for user ID: {db_user['id']} (Tier: {db_user['tier']}) via provided google_user_id")
-
-    except (ValueError, DatabaseError) as user_err: # Catch errors from get_or_create_user
-        logging.error(f"User lookup/creation failed for google_user_id {google_user_id}: {user_err}")
-        # Return 401 if ID was invalid, 500 for DB errors
-        status_code = 401 if isinstance(user_err, ValueError) else 500
-        return jsonify({"error": f"User lookup/creation failed: {user_err}"}), status_code
-    except Exception as e:
-        logging.error(f"Unexpected error during user processing for {google_user_id}: {e}")
-        return jsonify({"error": "An unexpected error occurred during user processing"}), 500
+    # Log the request with the authenticated user ID
+    logging.info(f"Received analysis request for URL: {url} from User ID: {g.user['id']} (Google ID: {g.user['google_id']})")
 
     # --- Proceed with analysis ---
     result = analyze_article(url, article_text)
 
     status_code = 500 if "error" in result else 200
-    if "error" in result and "Agent configuration failed" in result["error"]:
-        status_code = 503
+    # Optional: More specific error code mapping
+    if "error" in result:
+        error_msg = result["error"]
+        if "Analysis failed due to tool error" in error_msg:
+            status_code = 502 # Bad Gateway if a downstream API failed
+        elif "Model did not return valid JSON" in error_msg or "Model did not provide a final text analysis" in error_msg:
+            status_code = 500 # Internal server error for model issues
+        elif "An unexpected server error occurred" in error_msg:
+            status_code = 500
 
     return jsonify(result), status_code
 
