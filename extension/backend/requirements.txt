@@ -1,9 +1,13 @@
 Flask
 Flask-Cors
-psycopg2-binary
-requests
 python-dotenv
+psycopg2-binary
+nltk
+requests
 google-auth
-
-gunicorn
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+protobuf
+# Add Gemini library
 google-generativeai

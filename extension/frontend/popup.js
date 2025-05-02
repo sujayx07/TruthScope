@@ -5,6 +5,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusIndicator = document.getElementById('statusIndicator');
     const actionButton = document.getElementById('actionButton');
     const themeToggleButton = document.getElementById('themeToggleButton'); // Add reference to theme toggle button
+    const sentimentBiasSection = document.getElementById('sentimentBiasSection'); // New
+    const sentimentDisplay = document.getElementById('sentimentDisplay'); // New
+    const biasTags = document.getElementById('biasTags'); // New
 
     // --- Theme Handling Code ---
     const THEMES = ['light', 'dark', 'system'];
@@ -99,7 +102,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to update UI based on analysis result
     function updateUI(data) {
-        if (!data || (!data.textResult && !data.mediaResult)) {
+        // Clear previous sentiment/bias display
+        sentimentBiasSection.classList.add('hidden');
+        sentimentDisplay.textContent = '';
+        sentimentDisplay.className = 'inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded mr-1'; // Reset classes
+        biasTags.innerHTML = '';
+
+        if (!data || (!data.textResult && !data.mediaResult && !data.sentimentBiasResult)) { // Check all potential data sources
             statusDiv.textContent = 'No analysis data available for this page yet.';
             
             // Reset status indicator
@@ -177,6 +186,57 @@ document.addEventListener('DOMContentLoaded', function() {
             statusDiv.textContent = 'Text analysis pending or failed.';
             statusIndicator.className = 'status-indicator unknown pulse-animation';
         }
+
+        // --- NEW: Display Sentiment and Bias --- 
+        if (data.sentimentBiasResult && !data.sentimentBiasResult.error) {
+            sentimentBiasSection.classList.remove('hidden');
+
+            // Display Sentiment
+            const sentiment = data.sentimentBiasResult.sentiment;
+            if (sentiment && !sentiment.error) {
+                let sentimentText = 'Neutral';
+                let sentimentColorClass = 'bg-gray-400 text-gray-900'; // Default: Neutral
+                let sentimentIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5" /></svg>`; // Neutral icon
+
+                if (sentiment.label === 'positive') {
+                    sentimentText = 'Positive';
+                    sentimentColorClass = 'bg-green-200 text-green-800 dark:bg-green-700 dark:text-green-100';
+                    sentimentIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>`; // Plus icon
+                } else if (sentiment.label === 'negative') {
+                    sentimentText = 'Negative';
+                    sentimentColorClass = 'bg-red-200 text-red-800 dark:bg-red-700 dark:text-red-100';
+                    sentimentIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" /></svg>`; // Minus icon
+                }
+                sentimentDisplay.innerHTML = `${sentimentIcon} ${sentimentText}`;
+                sentimentDisplay.classList.add(...sentimentColorClass.split(' '));
+            } else {
+                sentimentDisplay.textContent = 'Sentiment N/A';
+                sentimentDisplay.classList.add('bg-gray-300', 'text-gray-700');
+            }
+
+            // Display Bias Tags
+            const bias = data.sentimentBiasResult.bias;
+            if (bias && bias.indicators && bias.indicators.length > 0) {
+                bias.indicators.slice(0, 3).forEach(indicator => { // Limit to 3 tags for popup
+                    const tag = document.createElement('span');
+                    tag.className = 'inline-flex items-center gap-1 bg-yellow-200 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100 text-xs font-medium px-2 py-0.5 rounded';
+                    // Simple tag icon
+                    tag.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>
+                                   ${indicator.charAt(0).toUpperCase() + indicator.slice(1)}`; // Capitalize
+                    biasTags.appendChild(tag);
+                });
+            } else if (bias && bias.summary && !bias.indicators?.length) {
+                 // Optionally show summary if no specific tags
+                 // const summaryTag = document.createElement('span');
+                 // summaryTag.className = 'text-xs text-gray-500 dark:text-gray-400';
+                 // summaryTag.textContent = bias.summary;
+                 // biasTags.appendChild(summaryTag);
+            }
+        } else if (data.sentimentBiasResult && data.sentimentBiasResult.error) {
+            console.warn("Sentiment/Bias analysis error:", data.sentimentBiasResult.error);
+            // Optionally display an error indicator for sentiment/bias
+        }
+        // --- END NEW SECTION ---
     }
 
     // Get the current tab and request results from background script
