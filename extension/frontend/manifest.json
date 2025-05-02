@@ -43,7 +43,7 @@
     "extension_pages": "script-src 'self'; object-src 'self';"
   },
   "oauth2": {
-    "client_id": "195457654977-nsal93rm38e4enig8upkkt5s9f3k5cec.apps.googleusercontent.com",
+    "client_id": "195457654977-9olfomkoifrt35mdskjt4o8akhi19un9.apps.googleusercontent.com",
     "scopes": [
       "openid",
       "https://www.googleapis.com/auth/userinfo.email",

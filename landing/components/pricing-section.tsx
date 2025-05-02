@@ -1,28 +1,4 @@
-[1:09 PM, 5/2/2025] Srijita IOT TMSL:  import logging
-import os
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import requests
-import json
-
-# --- Configuration ---
-SIGHTENGINE_API_USER = os.environ.get('SIGHTENGINE_API_USER', '99030650')
-SIGHTENGINE_API_SECRET = os.environ.get('SIGHTENGINE_API_SECRET', 'rUSbX3YpAnSeWr2GRqpfRqYaJr8HFhdh')
-OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', 'K85699750588957')
-SIGHTENGINE_API_URL = 'https://api.sightengine.com/1.0/check.json'
-OCR_SPACE_API_URL = 'https://api.ocr.space/parse/imageurl'
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
-
-# Create Flask app and enable CORS
-app = Flask(__name__)
-CORS(app)
-
-# --- API Client Functions ---
-
-def call_sighte…
-[1:32 PM, 5/2/2025] Srijita IOT TMSL:  "use client"
+"use client"
 
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
