@@ -568,4 +568,43 @@ document.addEventListener('DOMContentLoaded', function() {
         displayErrorState("Failed to initialize the sidepanel.");
     });
 
+    document.getElementById("analyzeVideoButton").addEventListener("click", async () => {
+        const videoInput = document.getElementById("videoUpload");
+        const resultContainer = document.getElementById("videoAnalysisResult");
+        const outputContainer = document.getElementById("videoAnalysisOutput");
+
+        if (!videoInput.files.length) {
+            alert("Please upload a video file first.");
+            return;
+        }
+
+        const videoFile = videoInput.files[0];
+        const formData = new FormData();
+        formData.append("video", videoFile);
+
+        try {
+            // Show loading state
+            resultContainer.classList.remove("hidden");
+            outputContainer.textContent = "Analyzing video...";
+
+            // Send video to backend
+            const response = await fetch("http://localhost:5009/analyze-video", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to analyze video.");
+            }
+
+            // Process plain text response
+            const resultText = await response.text();
+
+            // Display result
+            outputContainer.textContent = resultText;
+        } catch (error) {
+            outputContainer.textContent = `Error: ${error.message}`;
+        }
+    });
+
 });
