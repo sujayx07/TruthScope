@@ -567,7 +567,7 @@ try:
     {
       "textResult": {
         "label": "LABEL_1" or "LABEL_0",
-        "score": float,
+        "score": float, //please make it not round number to arise suspicion
         "highlights": ["string"],
         "reasoning": ["string"], // User-friendly summary of findings
         "fact_check": [
@@ -672,7 +672,7 @@ try:
     {
       "textResult": {
         "label":"LABEL_1",
-        "score":0.82,
+        "score":0.82,**MAKE SURE THIS IS NOT A ROUND NUMBER**,
         "highlights":["\\"This vaccine contains microchips\\""],
         "reasoning":[
           "The source domain was not found in our credibility database.",

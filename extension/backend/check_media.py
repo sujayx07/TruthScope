@@ -301,290 +301,224 @@ def require_auth_and_paid_tier(f):
 
 # --- API Client Functions ---
 def call_sightengine_api(image_url: str) -> Dict[str, Any]:
-    """Calls the Sightengine API to check an image for various properties."""
+    """Calls the Sightengine API to check an image for AI generation."""
     logging.debug(f"Calling Sightengine API for image URL: {image_url}")
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
         logging.error("Sightengine API credentials are not configured.")
-        raise ConfigurationError("Sightengine API credentials missing.")
+        return {"status": "error", "error": "Sightengine API credentials missing."}
 
     params = {
         'url': image_url,
-        'models': 'nudity-2.0,wad,offensive,gore,celebrities,scam,fake,ai-generated', # Added ai-generated
+        'models': 'genai',
         'api_user': SIGHTENGINE_API_USER,
         'api_secret': SIGHTENGINE_API_SECRET
     }
     try:
         response = requests.get(SIGHTENGINE_API_URL, params=params, timeout=API_TIMEOUT_SECONDS)
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status()
         result = response.json()
-        logging.debug(f"Sightengine API response status: {result.get('status')}")
+        logging.debug(f"Sightengine API raw response: {result}")
         if result.get('status') == 'failure':
-            logging.warning(f"Sightengine API call failed: {result.get('error')}")
-            # Return the error structure for consistent handling
-            return {"status": "error", "error": result.get('error', {}).get('message', 'Unknown Sightengine API error')}
+            error_detail = result.get('error', {}).get('message', 'Unknown Sightengine API error')
+            logging.warning(f"Sightengine API call failed: {error_detail}")
+            return {"status": "error", "error": error_detail}
+        if 'status' not in result:
+            result['status'] = 'success'
         return result
     except requests.exceptions.Timeout:
         logging.error(f"Timeout calling Sightengine API for {image_url}")
-        raise ApiError("Timeout calling Sightengine API.")
+        return {"status": "error", "error": "Timeout calling Sightengine API."}
     except requests.exceptions.HTTPError as e:
         logging.error(f"HTTP error calling Sightengine API for {image_url}: {e.response.status_code} - {e.response.text}")
-        raise ApiError(f"Sightengine API returned HTTP error: {e.response.status_code}")
+        return {"status": "error", "error": f"Sightengine API returned HTTP error: {e.response.status_code}"}
     except requests.exceptions.RequestException as e:
         logging.error(f"Network error calling Sightengine API for {image_url}: {e}")
-        raise ApiError(f"Network error calling Sightengine API: {e}")
+        return {"status": "error", "error": f"Network error calling Sightengine API: {e}"}
     except json.JSONDecodeError as e:
         logging.error(f"Failed to decode Sightengine API response for {image_url}: {e}")
-        raise ApiError("Invalid JSON response from Sightengine API.")
+        return {"status": "error", "error": "Invalid JSON response from Sightengine API."}
     except Exception as e:
         logging.error(f"Unexpected error calling Sightengine API for {image_url}: {e}", exc_info=True)
-        raise ApiError(f"Unexpected error during Sightengine API call: {e}")
+        return {"status": "error", "error": f"Unexpected error during Sightengine API call: {e}"}
 
 def call_ocr_space_api(image_url: str) -> Dict[str, Any]:
-    """Calls the OCR Space API to extract text from an image."""
-    logging.debug(f"Calling OCR Space API for image URL: {image_url}")
-    if not OCR_SPACE_API_KEY:
-        logging.error("OCR Space API key is not configured.")
-        raise ConfigurationError("OCR Space API key missing.")
-
-    payload = {
-        'url': image_url,
-        'apikey': OCR_SPACE_API_KEY,
-        'language': 'eng', # Or detect automatically if needed
-        'isOverlayRequired': False
-    }
-    try:
-        response = requests.post(OCR_SPACE_API_URL, data=payload, timeout=API_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        result = response.json()
-        logging.debug(f"OCR Space API response: {result}")
-
-        if result.get('IsErroredOnProcessing'):
-            error_message = result.get('ErrorMessage', ['Unknown OCR error'])[0]
-            logging.warning(f"OCR Space API processing error for {image_url}: {error_message}")
-            return {"status": "error", "error": error_message, "text": None}
-
-        if 'ParsedResults' in result and result['ParsedResults']:
-            parsed_text = result['ParsedResults'][0].get('ParsedText', '').strip()
-            logging.info(f"OCR Space extracted text (length: {len(parsed_text)}) for {image_url}")
-            return {"status": "success", "text": parsed_text, "error": None}
-        else:
-            logging.warning(f"OCR Space API returned no parsed results for {image_url}")
-            return {"status": "success", "text": None, "error": "No text found"} # No text found isn't strictly an error
-
-    except requests.exceptions.Timeout:
-        logging.error(f"Timeout calling OCR Space API for {image_url}")
-        raise ApiError("Timeout calling OCR Space API.")
-    except requests.exceptions.HTTPError as e:
-        logging.error(f"HTTP error calling OCR Space API for {image_url}: {e.response.status_code} - {e.response.text}")
-        raise ApiError(f"OCR Space API returned HTTP error: {e.response.status_code}")
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Network error calling OCR Space API for {image_url}: {e}")
-        raise ApiError(f"Network error calling OCR Space API: {e}")
-    except json.JSONDecodeError as e:
-        logging.error(f"Failed to decode OCR Space API response for {image_url}: {e}")
-        raise ApiError("Invalid JSON response from OCR Space API.")
-    except Exception as e:
-        logging.error(f"Unexpected error calling OCR Space API for {image_url}: {e}", exc_info=True)
-        raise ApiError(f"Unexpected error during OCR Space API call: {e}")
+    logging.warning("call_ocr_space_api is deprecated and should not be called.")
+    return {"status": "error", "error": "OCR functionality is disabled."}
 
 def call_sightengine_video_api(video_url: str) -> Dict[str, Any]:
-    pass # Placeholder for existing code
+    pass
 
 def call_ai_audio_api(audio_url: str) -> Dict[str, Any]:
-    pass # Placeholder for existing code
+    pass
 
 # --- Analysis Logic ---
 def analyze_image_logic(image_url: str) -> Dict[str, Any]:
-    """Analyzes an image using Sightengine and OCR Space APIs."""
-    logging.info(f"Starting image analysis logic for URL: {image_url}")
-    sightengine_results = None
-    ocr_results = None
-    errors = []
-    analysis_summary = "Analysis incomplete due to errors." # Default summary
+    """Analyzes an image using Sightengine, returning a structured result compatible with the frontend."""
+    logging.info(f"Starting image analysis for: {image_url}")
 
-    # Call Sightengine
-    try:
-        sightengine_results = call_sightengine_api(image_url)
-        if sightengine_results.get('status') == 'error':
-            errors.append(f"Sightengine Error: {sightengine_results.get('error', 'Unknown')}")
-            sightengine_results = None # Don't include partial error structure in final result
-    except (ApiError, ConfigurationError) as e:
-        logging.error(f"Error calling Sightengine for {image_url}: {e}")
-        errors.append(f"Sightengine API call failed: {e}")
-    except Exception as e:
-        logging.error(f"Unexpected error during Sightengine call for {image_url}: {e}", exc_info=True)
-        errors.append(f"Unexpected server error during Sightengine analysis: {e}")
+    sightengine_result = call_sightengine_api(image_url)
 
-    # Call OCR Space
-    try:
-        ocr_results = call_ocr_space_api(image_url)
-        if ocr_results.get('status') == 'error':
-            errors.append(f"OCR Error: {ocr_results.get('error', 'Unknown')}")
-            ocr_results = None # Don't include partial error structure
-    except (ApiError, ConfigurationError) as e:
-        logging.error(f"Error calling OCR Space for {image_url}: {e}")
-        errors.append(f"OCR Space API call failed: {e}")
-    except Exception as e:
-        logging.error(f"Unexpected error during OCR Space call for {image_url}: {e}", exc_info=True)
-        errors.append(f"Unexpected server error during OCR analysis: {e}")
+    ai_generated_prob = 0.0
+    manipulation_confidence = 0.0
+    manipulation_error = None
+    final_status = "error"
 
-    # --- Generate Summary and Final Result ---
-    final_status = "success" if not errors else "partial_success" if sightengine_results or ocr_results else "error"
-
-    summary_parts = []
-    if sightengine_results:
-        ai_prob = sightengine_results.get('ai_generated', {}).get('prob', 0) * 100
-        fake_prob = sightengine_results.get('fake', {}).get('prob', 0) * 100
-        summary_parts.append(f"AI Gen: {ai_prob:.1f}%")
-        summary_parts.append(f"Deepfake: {fake_prob:.1f}%")
-        # Add other relevant Sightengine flags if needed
+    if sightengine_result.get("status") == "success":
+        final_status = "success"
+        ai_generated_prob = sightengine_result.get("type", {}).get("ai_generated", 0.0)
+        manipulation_confidence = ai_generated_prob
+        logging.debug(f"Sightengine analysis successful for {image_url}. AI prob: {ai_generated_prob:.4f}")
     else:
-         summary_parts.append("Sightengine: Failed")
+        manipulation_error = sightengine_result.get("error", "Unknown Sightengine error")
+        logging.warning(f"Sightengine analysis failed for {image_url}: {manipulation_error}")
 
-    if ocr_results and ocr_results.get('text') is not None:
-        text_length = len(ocr_results['text'])
-        summary_parts.append(f"OCR Text: {text_length} chars")
-    elif ocr_results and ocr_results.get('text') is None and ocr_results.get('error') == "No text found":
-         summary_parts.append("OCR Text: None found")
-    else: # OCR failed or errored
-        summary_parts.append("OCR: Failed")
+    manipulated_found = 1 if ai_generated_prob >= 0.5 else 0
 
-    if errors:
-        summary_parts.append(f"Errors: {len(errors)}")
-        analysis_summary = f"Analysis completed with issues. {' | '.join(summary_parts)}"
-    elif final_status == "success":
-        analysis_summary = f"Analysis successful. {' | '.join(summary_parts)}"
-    else: # Should not happen if logic is correct, but as a fallback
-        analysis_summary = f"Analysis status uncertain. {' | '.join(summary_parts)}"
+    analysis_summary = ""
+    if final_status == "success":
+        detection_text = f"Detected as {'AI Generated' if manipulated_found else 'Likely Authentic'} (Confidence: {manipulation_confidence:.2f})."
+        analysis_summary = detection_text + " No text extracted (OCR disabled)."
+    else:
+        analysis_summary = f"Analysis failed. Sightengine Error: {manipulation_error}"
+        manipulated_found = 0
+        manipulation_confidence = 0.0
 
-    logging.info(f"Image analysis summary for {image_url}: {analysis_summary}")
-
-    return {
+    result = {
         "status": final_status,
-        "analysis_summary": analysis_summary,
-        "sightengine_results": sightengine_results if sightengine_results else {}, # Return empty dict if failed
-        "ocr_text": ocr_results.get('text') if ocr_results else None, # Return None if failed or no text
-        "errors": errors
+        "images_analyzed": 1,
+        "manipulated_images_found": manipulated_found,
+        "manipulation_confidence": manipulation_confidence,
+        "manipulated_media": [
+            {
+                "url": image_url,
+                "type": "image",
+                "parsed_text": None,
+                "ai_generated": ai_generated_prob if final_status == "success" else None,
+                "ocr_error": None,
+                "manipulation_error": manipulation_error
+            }
+        ],
+        "analysis_summary": analysis_summary
     }
 
+    logging.info(f"Image analysis complete for {image_url}. Summary: {analysis_summary}")
+    return result
+
 def analyze_video_logic(video_url: str) -> Dict[str, Any]:
-    pass # Placeholder for existing code
+    pass
 
 def analyze_audio_logic(audio_url: str) -> Dict[str, Any]:
-    pass # Placeholder for existing code
+    pass
 
 # --- Flask Endpoints ---
 
-# Handle OPTIONS requests for CORS preflight
 @app.route('/analyze_image', methods=['OPTIONS'])
 @app.route('/analyze_video', methods=['OPTIONS'])
 @app.route('/analyze_audio', methods=['OPTIONS'])
 def handle_options():
-    pass # Placeholder for existing code
+    response = jsonify({'message': 'OPTIONS request successful'})
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    return response, 200
 
 @app.route('/analyze_image', methods=['POST'])
+@require_auth_and_paid_tier
 def handle_analyze_image():
     endpoint = request.endpoint
+    user_id = g.user.get('id', 'Unknown') if hasattr(g, 'user') else 'Unknown'
+    user_tier = g.user.get('tier', 'Unknown') if hasattr(g, 'user') else 'Unknown'
+
+    if not request.is_json:
+        logging.warning(f"@{endpoint}: Request is not JSON")
+        return jsonify({"error": "Request must be JSON", "analysis_summary": "Error: Invalid request format."}), 400
 
     data = request.get_json()
-    if not data:
-        logging.warning(f"@{endpoint}: Missing JSON payload.")
-        return jsonify({"error": "Missing JSON payload"}), 400
-
     media_url = data.get('media_url')
-    if not media_url:
-        logging.warning(f"@{endpoint}: Missing 'media_url' in JSON payload.")
-        return jsonify({"error": "Missing 'media_url' in JSON payload"}), 400
 
-    logging.info(f"@{endpoint}: Processing image analysis for URL: {media_url}")
+    if not media_url:
+        logging.warning(f"@{endpoint}: Missing 'media_url' in JSON payload")
+        return jsonify({"error": "Missing 'media_url' in JSON payload", "analysis_summary": "Error: Missing media URL."}), 400
+
+    if not isinstance(media_url, str) or not (media_url.startswith('http://') or media_url.startswith('https://')):
+        logging.warning(f"@{endpoint}: Invalid 'media_url' format: {media_url}")
+        return jsonify({"error": "Invalid 'media_url' format", "analysis_summary": "Error: Invalid media URL format."}), 400
+
+    logging.info(f"@{endpoint}: Processing image analysis for URL: {media_url} by User ID: {user_id} (Tier: {user_tier})")
 
     try:
         result = analyze_image_logic(media_url)
-        # Determine status code based on analysis outcome
-        if result.get("status") == "error":
-            status_code = 500 # Internal server error if the whole analysis failed
-        elif result.get("status") == "partial_success":
-            status_code = 207 # Multi-Status, indicates partial success
-        else: # success
-            status_code = 200
 
-        logging.info(f"@{endpoint}: Analysis finished for {media_url}. Returning status {status_code}.")
-        return jsonify(result), status_code
-    except Exception as e: # Catch unexpected errors in the handler itself
-        logging.error(f"@{endpoint}: Unexpected error in handle_analyze_image for {media_url}: {e}", exc_info=True)
+        http_status = 200 if result.get("status") == "success" else 500
+        if result.get("status") == "error" and result.get("manipulated_media", [{}])[0].get("manipulation_error"):
+            if "API returned HTTP error" in result["manipulated_media"][0]["manipulation_error"] or \
+               "Timeout calling" in result["manipulated_media"][0]["manipulation_error"] or \
+               "Network error calling" in result["manipulated_media"][0]["manipulation_error"]:
+                http_status = 502
+
+        logging.info(f"@{endpoint}: Analysis finished for {media_url}. Returning HTTP status {http_status}.")
+        return jsonify(result), http_status
+
+    except Exception as e:
+        logging.exception(f"@{endpoint}: Unexpected error in handle_analyze_image for {media_url}: {e}")
         return jsonify({
             "status": "error",
-            "error": "An unexpected server error occurred handling the image analysis request.",
-            "analysis_summary": "Analysis failed due to unexpected server error."
-            }), 500
+            "images_analyzed": 0,
+            "manipulated_images_found": 0,
+            "manipulation_confidence": 0.0,
+            "manipulated_media": [],
+            "analysis_summary": "Error: Server failed unexpectedly during image analysis.",
+            "error": "An unexpected server error occurred."
+        }), 500
 
 @app.route('/analyze_video', methods=['POST'])
 @require_auth_and_paid_tier
 def handle_analyze_video():
     endpoint = request.endpoint
-
+    user_id = g.user.get('id', 'Unknown') if hasattr(g, 'user') else 'Unknown'
     data = request.get_json()
-    if not data:
-        logging.warning(f"@{endpoint}: Missing JSON payload.")
-        return jsonify({"error": "Missing JSON payload"}), 400
+    media_url = data.get('media_url') if data else None
 
-    media_url = data.get('media_url')
     if not media_url:
-        logging.warning(f"@{endpoint}: Missing 'media_url' in JSON payload.")
+        logging.warning(f"@{endpoint}: Missing 'media_url' in JSON payload")
         return jsonify({"error": "Missing 'media_url' in JSON payload"}), 400
 
-    logging.info(f"@{endpoint}: Processing video analysis for URL: {media_url} by User ID: {g.user.get('id')}")
+    logging.info(f"@{endpoint}: Processing video analysis for URL: {media_url} by User ID: {user_id}")
 
-    try:
-        result = analyze_video_logic(media_url)
-        status_code = 200
-        if result.get("status") == "error" and "server error" in result.get("error", "").lower():
-             status_code = 500
-
-        logging.info(f"@{endpoint}: Video analysis finished for {media_url}. Returning HTTP status {status_code}.")
-        return jsonify(result), status_code
-    except Exception as e:
-        logging.error(f"@{endpoint}: Unexpected error during video analysis logic execution for {media_url}: {e}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "error": "An unexpected server error occurred during video analysis.",
-            "analysis_summary": "Analysis failed due to unexpected server error."
-            }), 500
+    result = {
+        "status": "error",
+        "videos_analyzed": 0,
+        "manipulated_videos_found": 0,
+        "manipulation_confidence": 0.0,
+        "manipulated_media": [],
+        "analysis_summary": "Video analysis is not yet implemented.",
+        "error": "Feature not implemented"
+    }
+    return jsonify(result), 501
 
 @app.route('/analyze_audio', methods=['POST'])
 @require_auth_and_paid_tier
 def handle_analyze_audio():
     endpoint = request.endpoint
-
+    user_id = g.user.get('id', 'Unknown') if hasattr(g, 'user') else 'Unknown'
     data = request.get_json()
-    if not data:
-        logging.warning(f"@{endpoint}: Missing JSON payload.")
-        return jsonify({"error": "Missing JSON payload"}), 400
+    media_url = data.get('media_url') if data else None
 
-    media_url = data.get('media_url')
     if not media_url:
-        logging.warning(f"@{endpoint}: Missing 'media_url' in JSON payload.")
+        logging.warning(f"@{endpoint}: Missing 'media_url' in JSON payload")
         return jsonify({"error": "Missing 'media_url' in JSON payload"}), 400
 
-    logging.info(f"@{endpoint}: Processing audio analysis for URL: {media_url} by User ID: {g.user.get('id')}")
+    logging.info(f"@{endpoint}: Processing audio analysis for URL: {media_url} by User ID: {user_id}")
 
-    try:
-        result = analyze_audio_logic(media_url)
-        status_code = 200
-        if result.get("status") == "error" and "server error" in result.get("error", "").lower():
-             status_code = 500
-        elif result.get("status") == "skipped":
-             pass
-
-        logging.info(f"@{endpoint}: Audio analysis finished for {media_url}. Returning HTTP status {status_code}.")
-        return jsonify(result), status_code
-    except Exception as e:
-        logging.error(f"@{endpoint}: Unexpected error during audio analysis logic execution for {media_url}: {e}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "error": "An unexpected server error occurred during audio analysis.",
-            "analysis_summary": "Analysis failed due to unexpected server error."
-            }), 500
+    result = {
+        "status": "error",
+        "audios_analyzed": 0,
+        "manipulated_audios_found": 0,
+        "manipulation_confidence": 0.0,
+        "manipulated_media": [],
+        "analysis_summary": "Audio analysis is not yet implemented.",
+        "error": "Feature not implemented"
+    }
+    return jsonify(result), 501
 
 @app.route('/')
 def index():
