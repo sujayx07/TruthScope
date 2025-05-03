@@ -13,4 +13,7 @@ protobuf
 google-generativeai
 
 # GDELT API client
-pypi:gdeltdoc
+gdeltdoc
+
+torch
+torchvision

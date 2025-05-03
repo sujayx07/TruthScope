@@ -356,78 +356,129 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Indicate async response
   }
 
-  // --- processMediaItem ---
+  // --- Modified: processMediaItem ---
   if (message.action === "processMediaItem" && tabId) {
-    const { itemUrl, itemType } = message.data;
-    console.log(`🖼️ [Tab ${tabId}] Received ${itemType} for analysis: ${itemUrl}`);
+    const { mediaUrl, mediaType, mediaId } = message.data;
+    console.log(`🖼️ [Tab ${tabId}] Received ${mediaType} for analysis: ${mediaUrl} (ID: ${mediaId})`);
 
+    // *** Check stored token first ***
     if (!currentAuthToken) {
-        console.warn(`[Tab ${tabId}] No auth token available for media analysis.`);
-        if (!processingState[tabId]) processingState[tabId] = {};
-        if (!processingState[tabId].mediaItems) processingState[tabId].mediaItems = {};
-        processingState[tabId].mediaItems[itemUrl] = { status: 'error', error: 'Authentication required' };
-        chrome.runtime.sendMessage({ action: "mediaItemUpdate", tabId: tabId, url: itemUrl, result: processingState[tabId].mediaItems[itemUrl] })
-             .catch(err => console.log(`Error notifying UI of media auth error:`, err));
+        console.warn(`[Tab ${tabId}] No auth token available for media analysis for ${mediaUrl}. User needs to sign in.`);
+        chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, error: "Authentication required. Please sign in." }})
+            .catch(err => console.log(`[Tab ${tabId}] Error sending media auth error to content script:`, err));
+        sendResponse({ status: "error", error: "Authentication required. Please sign in." });
+        return false; // Stop processing
+    }
+
+    // Basic validation
+    if (!mediaUrl || !mediaType || !mediaId) {
+        console.warn(`[Tab ${tabId}] Invalid media item data received.`);
+        chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId || 'unknown', error: "Invalid media data received by background script." }})
+            .catch(err => console.log(`[Tab ${tabId}] Error sending invalid data error to content script:`, err));
+        sendResponse({ status: "error", error: "Invalid media data" });
         return false;
     }
-    const token = currentAuthToken;
 
-    let analysisUrl;
-    switch (itemType) {
-        case 'image': analysisUrl = IMAGE_ANALYSIS_URL; break;
-        case 'video': analysisUrl = VIDEO_ANALYSIS_URL; break;
-        case 'audio': analysisUrl = AUDIO_ANALYSIS_URL; break;
+    let targetUrl;
+    switch (mediaType.toLowerCase()) {
+        case 'img': case 'image': targetUrl = IMAGE_ANALYSIS_URL; break;
+        case 'video': targetUrl = VIDEO_ANALYSIS_URL; break;
+        case 'audio': targetUrl = AUDIO_ANALYSIS_URL; break;
         default:
-            console.warn(`[Tab ${tabId}] Unsupported media type: ${itemType}`);
+            console.warn(`[Tab ${tabId}] Unsupported media type: ${mediaType}. Cannot analyze.`);
+            chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, error: `Unsupported media type: ${mediaType}` }})
+                .catch(err => console.log(`[Tab ${tabId}] Error sending unsupported type error to content script:`, err));
+            sendResponse({ status: "error", error: `Unsupported media type: ${mediaType}` });
             return false;
     }
 
-    if (!processingState[tabId]) processingState[tabId] = {};
-    if (!processingState[tabId].mediaItems) processingState[tabId].mediaItems = {};
-    processingState[tabId].mediaItems[itemUrl] = { status: 'processing' };
-    chrome.runtime.sendMessage({ action: "mediaItemUpdate", tabId: tabId, url: itemUrl, result: { status: 'processing' } })
-        .catch(err => console.log(`Error notifying UI of media processing start:`, err));
+    // Use proper body structure with the correct parameter name 'media_url' as expected by backend
+    const requestBody = { media_url: mediaUrl };
+    const requestBodyString = JSON.stringify(requestBody);
 
-    fetch(analysisUrl, {
+    console.log(`[Tab ${tabId}] Making media analysis request for ${mediaType} (${mediaUrl}) using stored token.`);
+    console.log(`[Tab ${tabId}] Request Body: ${requestBodyString}`);
+
+    fetch(targetUrl, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": `Bearer ${token}`
+            "Authorization": `Bearer ${currentAuthToken}` // Use the stored token
         },
-        body: JSON.stringify({ url: itemUrl })
+        body: requestBodyString
     })
     .then(async response => {
-        console.log(`[Tab ${tabId}] Media Analysis API Response Status (${itemType} - ${itemUrl}):`, response.status);
-         if (response.status === 401 || response.status === 403) {
-            console.error(`[Tab ${tabId}] Media backend returned ${response.status} for ${itemUrl}. Token likely invalid/expired.`);
-            throw new Error(`Authentication failed (${response.status}) for media analysis.`);
+        console.log(`[Tab ${tabId}] Media Item Analysis API Response Status (${mediaUrl}):`, response.status);
+        if (response.status === 401) {
+            console.error(`[Tab ${tabId}] Backend returned 401 for media ${mediaUrl}. Stored token likely invalid/expired.`);
+            await handleSignOut(); // Sign out the user
+            throw new Error(`Authentication failed (401). Please sign in again.`);
+        } else if (response.status === 403) {
+            console.warn(`[Tab ${tabId}] Backend returned 403 for media ${mediaUrl}. Likely tier restriction.`);
+            let errorDetail = "Authorization failed (403).";
+            try { const errorJson = await response.json(); errorDetail = errorJson.error || errorDetail; } catch (e) {}
+            throw new Error(errorDetail);
         }
         if (!response.ok) {
             const errorText = await response.text();
             let errorDetail = errorText;
             try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error || errorText; } catch(e) {}
-            throw new Error(`Media Analysis HTTP ${response.status}: ${errorDetail}`);
+            throw { status: response.status, message: `HTTP ${response.status}: ${errorDetail}` };
         }
         return response.json();
     })
     .then(result => {
-        console.log(`[Tab ${tabId}] Media analysis result for ${itemUrl}:`, result);
+        console.log(`[Tab ${tabId}] Media analysis result received for ${mediaUrl}:`, result);
+        
+        const responseData = {
+            mediaId: mediaId,
+            mediaType: mediaType,
+            summary: result?.analysis_summary,
+            error: result?.error,
+            status: result?.status,
+            manipulation_confidence: result?.manipulation_confidence,
+            manipulated_found: result?.manipulated_images_found ?? result?.manipulated_videos_found ?? result?.manipulated_audios_found,
+            parsed_text: result?.manipulated_media?.[0]?.parsed_text,
+            ai_generated_score: result?.manipulated_media?.[0]?.ai_generated,
+            ocr_error: result?.manipulated_media?.[0]?.ocr_error,
+            manipulation_error: result?.manipulated_media?.[0]?.manipulation_error
+        };
+        
+        console.log(`[Tab ${tabId}] Attempting to send displayMediaAnalysis for mediaId ${mediaId} with data:`, responseData);
+        chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: responseData })
+            .then(() => console.log(`[Tab ${tabId}] Successfully sent displayMediaAnalysis for mediaId ${mediaId}`))
+            .catch(err => console.error(`[Tab ${tabId}] Error sending displayMediaAnalysis for mediaId ${mediaId}:`, err));
+            
+        // Also store in processingState for sidepanel access
+        if (!processingState[tabId]) processingState[tabId] = {};
         if (!processingState[tabId].mediaItems) processingState[tabId].mediaItems = {};
-        processingState[tabId].mediaItems[itemUrl] = { status: 'complete', data: result };
-        chrome.runtime.sendMessage({ action: "mediaItemUpdate", tabId: tabId, url: itemUrl, result: processingState[tabId].mediaItems[itemUrl] })
-            .catch(err => console.log(`Error notifying UI of media completion:`, err));
+        processingState[tabId].mediaItems[mediaUrl] = { status: 'complete', data: responseData };
+        
+        chrome.runtime.sendMessage({ action: "mediaItemUpdate", tabId: tabId, url: mediaUrl, result: { status: 'complete', data: responseData } })
+            .catch(err => console.log(`Error notifying UI of media item completion:`, err));
+        
+        sendResponse({ status: "success", resultReceived: true });
     })
     .catch(error => {
-        console.error(`[Tab ${tabId}] ❌ Error during media analysis fetch for ${itemUrl}:`, error);
+        const errorMessage = error.message || "Unknown media analysis error";
+        console.error(`[Tab ${tabId}] ❌ Error during media item analysis fetch for ${mediaUrl}. Full Error:`, error);
+        
+        chrome.tabs.sendMessage(tabId, { action: "displayMediaAnalysis", data: { mediaId: mediaId, mediaType: mediaType, status: 'error', error: errorMessage }})
+            .catch(err => console.log(`[Tab ${tabId}] Error sending displayMediaAnalysis (error) to content script:`, err));
+            
+        // Also store error in processingState for sidepanel access
+        if (!processingState[tabId]) processingState[tabId] = {};
         if (!processingState[tabId].mediaItems) processingState[tabId].mediaItems = {};
-        const errorMessage = error.message || `Unknown ${itemType} analysis error`;
-        processingState[tabId].mediaItems[itemUrl] = { status: 'error', error: errorMessage };
-        chrome.runtime.sendMessage({ action: "mediaItemUpdate", tabId: tabId, url: itemUrl, result: processingState[tabId].mediaItems[itemUrl] })
+        processingState[tabId].mediaItems[mediaUrl] = { status: 'error', error: errorMessage };
+        
+        chrome.runtime.sendMessage({ action: "mediaItemUpdate", tabId: tabId, url: mediaUrl, result: { status: 'error', error: errorMessage } })
             .catch(err => console.log(`Error notifying UI of media fetch error:`, err));
+            
+        sendResponse({ status: "error", error: errorMessage });
     });
 
-    return true;
+    return true; // Indicate async response
   }
 
   // --- getResultForTab ---
