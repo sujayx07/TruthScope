@@ -352,6 +352,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 statusBadge.className = `status-badge ${isFake ? 'fake' : 'real'}`;
                 confidenceDiv.textContent = `Confidence Score: ${confidence}%`;
 
+                // Ensure the credibility score needle updates correctly
+                const credibilityNeedle = document.getElementById('credibilityNeedle');
+                if (credibilityNeedle) {
+                    const needlePosition = Math.min(Math.max(data.textResult.score * 100, 0), 100); // Clamp between 0 and 100
+                    credibilityNeedle.style.left = `${needlePosition}%`;
+                }
+
                 // Display fact-check results if available
                 if (data.textResult.fact_check && Array.isArray(data.textResult.fact_check) && data.textResult.fact_check.length > 0) {
                     const factsHtml = data.textResult.fact_check.map(createSourceItemHTML).join('');

@@ -5,7 +5,9 @@
   <!-- Using Tailwind v2 for more modern utilities -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
   <style>
+  @import url('https://fonts.googleapis.com/css2?family=Abril+Fatface&display=swap');
     /* Base styles */
     html {
         scroll-behavior: smooth;
@@ -255,11 +257,9 @@
       <!-- Auth Container (Left) -->
       <div id="authContainer" class="flex items-center space-x-2">
         <!-- Sign In Button (Initially Visible) -->
-        <button id="signInButton" class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800">
+        <button id="signInButton" class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800">
           <!-- Optional: Add a Google icon here if desired -->
-          <svg class="w-4 h-4 mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 19">
-            <path fill-rule="evenodd" d="M8.842 18.083a8.8 8.8 0 0 1-8.65-8.948 8.841 8.841 0 0 1 8.8-8.652h.153a8.464 8.464 0 0 1 5.7 2.257l-2.193 2.038A5.27 5.27 0 0 0 9.09 3.4a5.882 5.882 0 0 0-.2 11.76h.124a5.091 5.091 0 0 0 5.248-4.057L14.3 11H9V8h8.342A8.807 8.807 0 0 1 18 18.083H8.842Z" clip-rule="evenodd"/>
-          </svg>
+          <img src="./google.png" alt="" class="w-4 h-4 mr-1 fill-white" />
           Sign in
         </button>
         <!-- User Info (Initially Hidden) -->
@@ -270,7 +270,8 @@
 
       <!-- Title (Center) -->
       <div class="text-center">
-        <h1 class="text-3xl font-bold text-purple-700">TruthScope Analysis</h1>
+        <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-900   via-purple-800 to-purple-700 truthScope">TruthScope</h1>
+        <span class="text-2xl font-bold" >Analysis</span>
       </div>
 
       <!-- Theme Toggle Button (Right) -->
@@ -281,12 +282,17 @@
       </button>
     </div>
 
-    <!-- Credibility Score Card -->
+    <!-- Combined Credibility Score Card -->
     <div class="card">
-      <h2 class="text-xl font-semibold text-gray-800 mb-4">Credibility Score</h2>
-      <div class="flex items-center space-x-4">
-        <div id="statusBadge" class="status-badge loading">Loading...</div>
-        <div id="confidence" class="text-gray-600 text-sm"></div>
+      <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Credibility Score</h2>
+      <div class="flex flex-col items-center space-y-4">
+        <div id="statusBadge" class="status-badge unknown">Unavailable</div>
+        <div id="confidence" class="text-gray-600 text-sm">Analysis not yet complete or page not supported.</div>
+        <div class="relative w-full h-6 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full">
+          <!-- Needle -->
+          <div id="credibilityNeedle" class="absolute top-0 left-0 w-1 h-6 bg-black transform -translate-x-1/2"></div>
+        </div>
+        <div id="credibilityScore" class="text-center mt-2 text-sm font-medium text-gray-800 dark:text-gray-100"></div>
       </div>
     </div>
 
@@ -326,7 +332,7 @@
       </div>
     </div>
 
-    Video Check Section
+
     <div class="card">
       <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Video Check</h2>
       <div class="space-y-4">
