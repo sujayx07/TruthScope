@@ -92,7 +92,6 @@ export function PricingSection() {
         { name: "Custom integration options", included: true },
         { name: "Dedicated support", included: true },
         { name: "Custom reporting", included: true },
-        { name: "SLA guarantees", included: true },
       ],
       cta: "Get Premium",
       popular: false,
