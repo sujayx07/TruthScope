@@ -78,7 +78,7 @@ export function PricingSection() {
       color: "from-primary to-purple-600",
     },
     {
-      name: "Premium",
+      name: "Enterprise",
       description: "Complete solution for organizations",
       monthlyPrice: "₹249",
       yearlyPrice: "₹2199",
