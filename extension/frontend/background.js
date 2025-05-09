@@ -1,9 +1,9 @@
 // Define backend endpoints
 const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/analyze";
-const IMAGE_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_image";
-const VIDEO_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_video";
-const AUDIO_ANALYSIS_URL = "http://127.0.0.1:3000/analyze_audio";
-const SENTIMENT_BIAS_ANALYSIS_URL = "http://127.0.0.1:5002/analyze_sentiment_bias"; // Added sentiment/bias endpoint
+const IMAGE_ANALYSIS_URL = "https://truthscope-check-media.onrender.com/analyze_image";
+const VIDEO_ANALYSIS_URL = "https://truthscope-check-media.onrender.com/analyze_video";
+const AUDIO_ANALYSIS_URL = "https://truthscope-check-media.onrender.com/analyze_audio";
+const SENTIMENT_BIAS_ANALYSIS_URL = "https://truthscope-check-sentiment.onrender.com/analyze_sentiment_bias"; // Added sentiment/bias endpoint
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json';
 const GOOGLE_REVOKE_URL = 'https://accounts.google.com/o/oauth2/revoke?token=';
 

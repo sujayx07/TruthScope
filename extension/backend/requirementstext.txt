@@ -1,0 +1,9 @@
+requests
+psycopg2-binary
+python-dotenv
+google-generativeai
+Flask
+gdeltdoc
+google-auth
+google-auth-oauthlib
+google 
