@@ -1,5 +1,5 @@
 // Define backend endpoints
-const TEXT_ANALYSIS_URL = "http://127.0.0.1:5000/analyze";
+const TEXT_ANALYSIS_URL = "https://truthscope-check-text.onrender.com/analyze";
 const IMAGE_ANALYSIS_URL = "https://truthscope-check-media.onrender.com/analyze_image";
 const VIDEO_ANALYSIS_URL = "https://truthscope-check-media.onrender.com/analyze_video";
 const AUDIO_ANALYSIS_URL = "https://truthscope-check-media.onrender.com/analyze_audio";

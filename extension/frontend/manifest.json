@@ -40,7 +40,8 @@
     "http://127.0.0.1:5009/*",
     "https://www.googleapis.com/*",
     "https://truthscope-check-sentiment.onrender.com/*",
-    "https://truthscope-check-media.onrender.com/*"
+    "https://truthscope-check-media.onrender.com/*",
+    "https://truthscope-check-text.onrender.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';"

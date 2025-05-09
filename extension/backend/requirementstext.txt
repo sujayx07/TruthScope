@@ -7,3 +7,4 @@ gdeltdoc
 google-auth
 google-auth-oauthlib
 google 
+gunicorn
