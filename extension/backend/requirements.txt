@@ -17,3 +17,4 @@ gdeltdoc
 
 torch
 torchvision
+gunicorn

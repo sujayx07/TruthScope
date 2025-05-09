@@ -1,5 +1,5 @@
 /**
- * @fileoverview Sidepanel script for TruthScope extension.
+ * @fileoverview Sidepanel script for SatyanwesAI extension.
  * Handles theme switching, UI updates based on auth state (managed by background.js),
  * requesting analysis data, and displaying results.
  */
@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!statusBadge || !confidenceDiv || !factCheckResultsContainer ||
         !newsResultsContainer || !themeToggleButton || !aiSummaryContainer ||
         !authContainer || !signInButton || !userInfoDiv || !userAvatar) {
-        console.error("TruthScope Sidepanel Error: One or more essential UI elements are missing.");
+        console.error("SatyanwesAI Sidepanel Error: One or more essential UI elements are missing.");
         const errorContainer = document.querySelector('.max-w-4xl.mx-auto') || document.body;
         errorContainer.innerHTML = '<div class="p-4 text-red-600 dark:text-red-400">Error: Sidepanel UI failed to load correctly. Please try reloading the extension or contact support.</div>';
         return;
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusBadge.className = "status-badge unknown";
         confidenceDiv.textContent = "Please sign in to analyze content.";
 
-        const signInMessage = '<div class="text-gray-500 dark:text-gray-400 p-4 text-center">Sign in with Google to use TruthScope analysis features.</div>';
+        const signInMessage = '<div class="text-gray-500 dark:text-gray-400 p-4 text-center">Sign in with Google to use SatyanwesAI analysis features.</div>';
         aiSummaryContainer.innerHTML = signInMessage;
         factCheckResultsContainer.innerHTML = ''; // Keep empty or add similar message
         newsResultsContainer.innerHTML = ''; // Keep empty or add similar message
@@ -575,43 +575,43 @@ document.addEventListener('DOMContentLoaded', function() {
         displayErrorState("Failed to initialize the sidepanel.");
     });
 
-    document.getElementById("analyzeVideoButton").addEventListener("click", async () => {
-        const videoInput = document.getElementById("videoUpload");
-        const resultContainer = document.getElementById("videoAnalysisResult");
-        const outputContainer = document.getElementById("videoAnalysisOutput");
+    // document.getElementById("analyzeVideoButton").addEventListener("click", async () => {
+    //     const videoInput = document.getElementById("videoUpload");
+    //     const resultContainer = document.getElementById("videoAnalysisResult");
+    //     const outputContainer = document.getElementById("videoAnalysisOutput");
 
-        if (!videoInput.files.length) {
-            alert("Please upload a video file first.");
-            return;
-        }
+    //     if (!videoInput.files.length) {
+    //         alert("Please upload a video file first.");
+    //         return;
+    //     }
 
-        const videoFile = videoInput.files[0];
-        const formData = new FormData();
-        formData.append("video", videoFile);
+    //     const videoFile = videoInput.files[0];
+    //     const formData = new FormData();
+    //     formData.append("video", videoFile);
 
-        try {
-            // Show loading state
-            resultContainer.classList.remove("hidden");
-            outputContainer.textContent = "Analyzing video...";
+    //     try {
+    //         // Show loading state
+    //         resultContainer.classList.remove("hidden");
+    //         outputContainer.textContent = "Analyzing video...";
 
-            // Send video to backend
-            const response = await fetch("http://localhost:5009/analyze-video", {
-                method: "POST",
-                body: formData,
-            });
+    //         // Send video to backend
+    //         const response = await fetch("http://localhost:5009/analyze-video", {
+    //             method: "POST",
+    //             body: formData,
+    //         });
 
-            if (!response.ok) {
-                throw new Error("Failed to analyze video.");
-            }
+    //         if (!response.ok) {
+    //             throw new Error("Failed to analyze video.");
+    //         }
 
-            // Process plain text response
-            const resultText = await response.text();
+    //         // Process plain text response
+    //         const resultText = await response.text();
 
-            // Display result
-            outputContainer.textContent = resultText;
-        } catch (error) {
-            outputContainer.textContent = `Error: ${error.message}`;
-        }
-    });
+    //         // Display result
+    //         outputContainer.textContent = resultText;
+    //     } catch (error) {
+    //         outputContainer.textContent = `Error: ${error.message}`;
+    //     }
+    // });
 
 });
